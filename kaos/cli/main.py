@@ -1934,6 +1934,54 @@ def dream_consolidate(ctx, db: str, apply: bool):
                       f"skipped {pol.skipped_existing} (already known)")
 
 
+@dream_group.command("localize")
+@click.argument("agent_id")
+@click.option("--db", default=DEFAULT_DB, help="Database file path")
+@click.pass_context
+def dream_localize(ctx, agent_id: str, db: str):
+    """Find the earliest decisive error in a failed agent's trajectory.
+
+    The visible error is rarely the root cause. This reconstructs the
+    agent's tool_calls + shared_log timeline and points at the step where
+    the outcome was effectively decided.
+    """
+    from kaos.dream.phases.localize import localize
+    if not Path(db).exists():
+        if _json_err(ctx, f"Database not found: {db}"):
+            return
+        console.print(f"[red]Database not found: {db}[/red]")
+        ctx.exit(1)
+        return
+    afs = _get_afs(db)
+    try:
+        cs = localize(afs.conn, agent_id)
+    finally:
+        afs.close()
+    if cs is None:
+        if _json_out(ctx, {"agent_id": agent_id, "critical_step": None}):
+            return
+        console.print(f"[yellow]No failure found in {agent_id}'s "
+                       f"trajectory — nothing to localize.[/yellow]")
+        return
+    payload = {
+        "agent_id": cs.agent_id,
+        "log_position": cs.log_position,
+        "tool_call_id": cs.tool_call_id,
+        "rationale": cs.rationale,
+        "method": cs.method,
+        "confidence": cs.confidence,
+    }
+    if _json_out(ctx, payload):
+        return
+    console.print(f"[bold]Critical step[/bold] for [cyan]{agent_id}[/cyan]")
+    console.print(f"  position: {cs.log_position}  "
+                  f"method: {cs.method}  "
+                  f"confidence: {cs.confidence:.2f}")
+    if cs.tool_call_id:
+        console.print(f"  tool_call: {cs.tool_call_id}")
+    console.print(f"  [dim]{cs.rationale}[/dim]")
+
+
 @dream_group.command("merges")
 @click.option("--db", default=DEFAULT_DB, help="Database file path")
 @click.option("--accept", type=int, default=None,

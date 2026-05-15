@@ -730,6 +730,26 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="dream_localize",
+            description=(
+                "Find the earliest decisive error in a failed agent's "
+                "trajectory. The visible error is rarely the root cause — "
+                "the agent usually went wrong earlier and only paid for it "
+                "later. Reconstructs the tool_calls + shared_log timeline "
+                "and returns the step where the outcome was effectively "
+                "decided. Heuristic-first; deterministic; no hot-path cost."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "agent_id": {"type": "string",
+                                 "description": "Agent whose failed "
+                                                "trajectory to localize"},
+                },
+                "required": ["agent_id"],
+            },
+        ),
+        Tool(
             name="dream_merges",
             description=(
                 "List pending merge proposals; accept or reject by proposal_id. "
@@ -1935,6 +1955,21 @@ async def _dispatch(name: str, args: dict[str, Any]) -> str:
                 "promoted": pol.total_promoted,
                 "skipped_existing": pol.skipped_existing,
             },
+        }, indent=2)
+
+    elif name == "dream_localize":
+        from kaos.dream.phases.localize import localize
+        cs = localize(_afs.conn, args["agent_id"])
+        if cs is None:
+            return json.dumps({"agent_id": args["agent_id"],
+                               "critical_step": None}, indent=2)
+        return json.dumps({
+            "agent_id": cs.agent_id,
+            "log_position": cs.log_position,
+            "tool_call_id": cs.tool_call_id,
+            "rationale": cs.rationale,
+            "method": cs.method,
+            "confidence": cs.confidence,
         }, indent=2)
 
     elif name == "dream_merges":

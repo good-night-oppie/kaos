@@ -1,0 +1,47 @@
+{
+  "scenarios": [
+    {
+      "scenario": "bad_intent_up_front",
+      "ground_truth": 0,
+      "localized": 0,
+      "within_1": true,
+      "confidence": 0.7,
+      "method": "heuristic"
+    },
+    {
+      "scenario": "immediate_error",
+      "ground_truth": 0,
+      "localized": 0,
+      "within_1": true,
+      "confidence": 0.7,
+      "method": "heuristic"
+    },
+    {
+      "scenario": "wrong_write_midway",
+      "ground_truth": 2,
+      "localized": 2,
+      "within_1": true,
+      "confidence": 0.65,
+      "method": "heuristic"
+    },
+    {
+      "scenario": "long_gap_before_failure",
+      "ground_truth": 0,
+      "localized": 0,
+      "within_1": true,
+      "confidence": 0.9,
+      "method": "heuristic"
+    },
+    {
+      "scenario": "vote_then_fail",
+      "ground_truth": 0,
+      "localized": 0,
+      "within_1": true,
+      "confidence": 0.74,
+      "method": "heuristic"
+    }
+  ],
+  "hits": 5,
+  "total": 5,
+  "acceptance": "hits >= 4/5"
+}
