@@ -1,0 +1,243 @@
+config:
+  command: bash
+  cwd: null
+  env:
+    recording: true
+  cols: 94
+  rows: 28
+  repeat: 0
+  quality: 100
+  frameDelay: auto
+  maxIdleTime: 5000
+  frameBox:
+    type: window
+    title: "KAOS v0.8.3 — finer-grained outcomes, failures, objectives"
+    style:
+      border: 0px black solid
+  cursorStyle: bar
+  fontFamily: Consolas, Menlo, monospace
+  fontSize: 14
+  lineHeight: 1.4
+  theme:
+    background: '#0d1117'
+    foreground: '#c9d1d9'
+    black: '#161b22'
+    red: '#ff7b72'
+    green: '#3fb950'
+    yellow: '#e3b341'
+    blue: '#58a6ff'
+    magenta: '#bc8cff'
+    cyan: '#39c5cf'
+    white: '#b5bac4'
+    brightBlack: '#6e7681'
+    brightRed: '#ffa198'
+    brightGreen: '#56d364'
+    brightYellow: '#e3b341'
+    brightBlue: '#79c0ff'
+    brightMagenta: '#d2a8ff'
+    brightCyan: '#56d4dd'
+    brightWhite: '#f0f6fc'
+
+records:
+
+  # ════════════════════════════════════════════════════
+  # SCENE 1 — Title (~7s)
+  # ════════════════════════════════════════════════════
+  - delay: 500
+    content: "\e[2J\e[H"
+  - delay: 200
+    content: "\r\n"
+  - delay: 150
+    content: "  \e[1m\e[96mKAOS v0.8.3\e[0m\r\n"
+  - delay: 150
+    content: "  \e[90m────────────────────────────────────────────────────────────\e[0m\r\n"
+  - delay: 800
+    content: "\r\n"
+  - delay: 600
+    content: "  \e[90mThe library already learns. v0.8.3 makes the signal\e[0m\r\n"
+  - delay: 500
+    content: "  \e[90mfiner: graded outcomes, classified failures, declared\e[0m\r\n"
+  - delay: 500
+    content: "  \e[90mobjectives — plus a war-room UI.\e[0m\r\n"
+  - delay: 4500
+    content: ""
+
+  # ════════════════════════════════════════════════════
+  # SCENE 2 — Track A: quality score (~10s)
+  # ════════════════════════════════════════════════════
+  - delay: 500
+    content: "\e[2J\e[H"
+  - delay: 200
+    content: "\r\n"
+  - delay: 150
+    content: "  \e[1m\e[95m1 · Quality score\e[0m  \e[90mbinary success was a coin flip\e[0m\r\n\r\n"
+  - delay: 700
+    content: "  \e[92m$\e[0m \e[97mkaos skills outcome 7 --quality 0.75\e[0m\r\n"
+  - delay: 1200
+    content: "  \e[92mOutcome recorded\e[0m  skill #7  success=True, quality=0.75\r\n"
+  - delay: 1600
+    content: "\r\n"
+  - delay: 600
+    content: "  \e[90mNear-miss gets partial credit. The Wilson ranker sees\e[0m\r\n"
+  - delay: 500
+    content: "  \e[90mSUM(quality), not a 0/1 it has to average out of noise.\e[0m\r\n"
+  - delay: 1500
+    content: "\r\n"
+  - delay: 800
+    content: "  \e[92m✔\e[0m  measured \e[1m+4.0 pp\e[0m accuracy  \e[90m(85.3% → 89.3%, 5 seeds)\e[0m\r\n"
+  - delay: 5000
+    content: ""
+
+  # ════════════════════════════════════════════════════
+  # SCENE 3 — Track B1: failure taxonomy (~9s)
+  # ════════════════════════════════════════════════════
+  - delay: 500
+    content: "\e[2J\e[H"
+  - delay: 200
+    content: "\r\n"
+  - delay: 150
+    content: "  \e[1m\e[95m2 · Failure taxonomy\e[0m  \e[90mwhy, not just what\e[0m\r\n\r\n"
+  - delay: 700
+    content: "  \e[92m$\e[0m \e[97mkaos dream failures --taxonomy-class planning\e[0m\r\n"
+  - delay: 1400
+    content: "  \e[90m12 distinct fingerprints (2 shown):\e[0m\r\n"
+  - delay: 900
+    content: "  \e[96m#7\e[0m \e[33mcode\e[0m \e[94m⦿planning\e[0m `bash|loop-no-exit` worker ×4\r\n"
+  - delay: 700
+    content: "     \e[90mcause: agent re-planned the same step without progress\e[0m\r\n"
+  - delay: 800
+    content: "  \e[96m#9\e[0m \e[33mcode\e[0m \e[94m⦿planning\e[0m `http|wrong-order` deploy ×2\r\n"
+  - delay: 1500
+    content: "\r\n"
+  - delay: 600
+    content: "  \e[90mReasoning-class, orthogonal to the execution category.\e[0m\r\n"
+  - delay: 5000
+    content: ""
+
+  # ════════════════════════════════════════════════════
+  # SCENE 4 — Track B2: critical-step localizer (~10s)
+  # ════════════════════════════════════════════════════
+  - delay: 500
+    content: "\e[2J\e[H"
+  - delay: 200
+    content: "\r\n"
+  - delay: 150
+    content: "  \e[1m\e[95m3 · Critical-step localizer\e[0m  \e[90mthe visible error lies\e[0m\r\n\r\n"
+  - delay: 700
+    content: "  \e[92m$\e[0m \e[97mkaos dream localize agent-deploy-3\e[0m\r\n"
+  - delay: 1600
+    content: "  \e[1mCritical step\e[0m for \e[96magent-deploy-3\e[0m\r\n"
+  - delay: 800
+    content: "    position: \e[1m2\e[0m   method: heuristic   confidence: 0.83\r\n"
+  - delay: 1400
+    content: "    \e[90mEarliest decisive step before the failure:\e[0m\r\n"
+  - delay: 600
+    content: "    \e[90m`log:intent deploy unverified build` — 6 steps before\e[0m\r\n"
+  - delay: 500
+    content: "    \e[90mthe visible error. Later steps inherited it.\e[0m\r\n"
+  - delay: 1600
+    content: "\r\n"
+  - delay: 700
+    content: "  \e[92m✔\e[0m  \e[1m5/5\e[0m planted bugs localized within ±1 step\r\n"
+  - delay: 5000
+    content: ""
+
+  # ════════════════════════════════════════════════════
+  # SCENE 5 — Track B3: ISA / ISC (~11s)
+  # ════════════════════════════════════════════════════
+  - delay: 500
+    content: "\e[2J\e[H"
+  - delay: 200
+    content: "\r\n"
+  - delay: 150
+    content: "  \e[1m\e[95m4 · Ideal State Artifacts\e[0m  \e[90mdeclare what 'done' means\e[0m\r\n\r\n"
+  - delay: 600
+    content: "  \e[92m$\e[0m \e[97mkaos ideal-state create \"Ship refund endpoint\" \\\e[0m\r\n"
+  - delay: 400
+    content: "      \e[97m--agent a1 -c \"returns 201\" -c \"idempotent\" \\\e[0m\r\n"
+  - delay: 400
+    content: "      \e[97m-c \"emits audit event\"\e[0m\r\n"
+  - delay: 1100
+    content: "  \e[92mISA #4\e[0m created — 3 criteria\r\n"
+  - delay: 1400
+    content: "\r\n"
+  - delay: 500
+    content: "  \e[92m$\e[0m \e[97mkaos ideal-state show 4 --finalize\e[0m\r\n"
+  - delay: 1300
+    content: "  \e[1mISA #4\e[0m Ship refund endpoint  \e[90m(failed)\e[0m\r\n"
+  - delay: 500
+    content: "    quality: \e[96m0.67\e[0m\r\n"
+  - delay: 700
+    content: "    \e[92m passed\e[0m #10 returns 201\r\n"
+  - delay: 500
+    content: "    \e[92m passed\e[0m #11 emits audit event\r\n"
+  - delay: 600
+    content: "    \e[91m failed\e[0m #12 idempotent  \e[94m⦿planning\e[0m\r\n"
+  - delay: 1600
+    content: "\r\n"
+  - delay: 600
+    content: "  \e[90m0.67 quality → graded skill outcome (feeds scene 1).\e[0m\r\n"
+  - delay: 5000
+    content: ""
+
+  # ════════════════════════════════════════════════════
+  # SCENE 6 — Track D: War Room (~8s)
+  # ════════════════════════════════════════════════════
+  - delay: 500
+    content: "\e[2J\e[H"
+  - delay: 200
+    content: "\r\n"
+  - delay: 150
+    content: "  \e[1m\e[95m5 · War Room\e[0m  \e[90mthe fleet, on one screen\e[0m\r\n\r\n"
+  - delay: 700
+    content: "  \e[92m$\e[0m \e[97mkaos ui  \e[90m# → http://127.0.0.1:8765/warroom.html\e[0m\r\n"
+  - delay: 1500
+    content: "\r\n"
+  - delay: 500
+    content: "  \e[90m┌─ mission control ─┐  ┌─ operatives floor ─┐\e[0m\r\n"
+  - delay: 400
+    content: "  \e[90m│\e[0m proposed  voting  \e[90m│\e[0m   \e[95m●\e[0m alpha   \e[96m●\e[0m beta  \r\n"
+  - delay: 400
+    content: "  \e[90m│\e[0m decided   done    \e[90m│\e[0m   \e[92m●\e[0m gamma   \e[93m●\e[0m delta \r\n"
+  - delay: 1400
+    content: "\r\n"
+  - delay: 600
+    content: "  \e[90mLogAct intent kanban + colored agent discs, click-to-\e[0m\r\n"
+  - delay: 500
+    content: "  \e[90mdossier. Vanilla single-file UI — no build, no node.\e[0m\r\n"
+  - delay: 5000
+    content: ""
+
+  # ════════════════════════════════════════════════════
+  # SCENE 7 — Measured reveal (~9s)
+  # ════════════════════════════════════════════════════
+  - delay: 500
+    content: "\e[2J\e[H"
+  - delay: 200
+    content: "\r\n"
+  - delay: 150
+    content: "  \e[1m\e[96mMeasured · v0.8.3\e[0m\r\n"
+  - delay: 150
+    content: "  \e[90m────────────────────────────────────────────────────────────\e[0m\r\n"
+  - delay: 1000
+    content: "\r\n"
+  - delay: 800
+    content: "  \e[92m✔\e[0m  \e[1m+4.0 pp\e[0m retrieval accuracy from graded outcomes\r\n"
+  - delay: 700
+    content: "  \e[92m✔\e[0m  \e[1m5/5\e[0m critical-step localizations within ±1\r\n"
+  - delay: 700
+    content: "  \e[92m✔\e[0m  \e[1m550\e[0m unit tests passing  \e[90m(+85, 0 regressions)\e[0m\r\n"
+  - delay: 700
+    content: "  \e[92m✔\e[0m  \e[1m50\e[0m MCP tools  ·  one additive v7→v8 migration\r\n"
+  - delay: 1200
+    content: "\r\n"
+  - delay: 700
+    content: "  \e[90mhonest limit: quality variance-reduction was measured\e[0m\r\n"
+  - delay: 500
+    content: "  \e[90mand did NOT hold — reported, not hidden.\e[0m\r\n"
+  - delay: 1300
+    content: "\r\n"
+  - delay: 700
+    content: "  \e[96mgithub.com/canivel/kaos\e[0m   ·   \e[96mv0.8.3\e[0m\r\n"
+  - delay: 4500
+    content: ""
