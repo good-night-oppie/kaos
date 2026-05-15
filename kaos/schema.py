@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 SCHEMA_SQL = """
 -- Agent Registry
@@ -473,6 +473,81 @@ CREATE TABLE IF NOT EXISTS llm_diagnosis_cache (
 """
 
 
+# Migration to v8: the consolidated v0.8.3 release. One additive migration
+# carrying every track's schema. Nothing here is destructive; existing rows
+# are untouched and every new column is nullable or defaulted.
+#  Track A  — skill_uses.quality (continuous [0,1] outcome signal)
+#  Track B1 — failure_fingerprints.taxonomy_class / taxonomy_subclass
+#  Track B2 — critical_steps table
+#  Track B3 — ideal_states + ideal_state_criteria tables
+#  Track C  — shared_log.vote_confidence / decide_mode (forward-compat;
+#             columns ship even though the Aegean code is gated out)
+MIGRATION_V8_SQL = """
+-- Track A: continuous quality score on skill outcomes
+ALTER TABLE skill_uses ADD COLUMN quality REAL
+    CHECK (quality IS NULL OR (quality >= 0 AND quality <= 1));
+CREATE INDEX IF NOT EXISTS idx_skill_uses_quality
+    ON skill_uses(skill_id, quality);
+
+-- Track B1: reasoning-class failure taxonomy alongside the execution-class
+-- `category` already on failure_fingerprints.
+ALTER TABLE failure_fingerprints ADD COLUMN taxonomy_class TEXT
+    CHECK (taxonomy_class IS NULL OR taxonomy_class IN
+      ('memory','reflection','planning','action','system','unknown'));
+ALTER TABLE failure_fingerprints ADD COLUMN taxonomy_subclass TEXT;
+
+-- Track B2: earliest-decisive-error localization on a failed trajectory
+CREATE TABLE IF NOT EXISTS critical_steps (
+    cs_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id        TEXT NOT NULL REFERENCES agents(agent_id),
+    fingerprint_id  INTEGER REFERENCES failure_fingerprints(fp_id),
+    log_position    INTEGER NOT NULL,
+    tool_call_id    INTEGER,
+    rationale       TEXT,
+    method          TEXT,
+    confidence      REAL,
+    isc_id          INTEGER,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_critical_steps_agent
+    ON critical_steps(agent_id);
+
+-- Track B3: Ideal State Artifact (objective) + Ideal State Criteria
+CREATE TABLE IF NOT EXISTS ideal_states (
+    isa_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id        TEXT NOT NULL REFERENCES agents(agent_id),
+    title           TEXT NOT NULL,
+    summary         TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now')),
+    completed_at    TEXT,
+    overall_status  TEXT
+                    CHECK (overall_status IS NULL OR overall_status IN
+                      ('pending','passed','failed','abandoned'))
+);
+CREATE TABLE IF NOT EXISTS ideal_state_criteria (
+    isc_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    isa_id           INTEGER NOT NULL REFERENCES ideal_states(isa_id),
+    criterion        TEXT NOT NULL,
+    verification     TEXT,
+    status           TEXT NOT NULL DEFAULT 'pending'
+                     CHECK (status IN ('pending','passed','failed','skipped')),
+    failure_taxonomy TEXT,
+    failure_note     TEXT,
+    verified_at      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_isc_isa
+    ON ideal_state_criteria(isa_id, status);
+
+-- Track C: forward-compat columns for Aegean incremental quorum. The
+-- columns ship now so the migration is single-shot; the decide()-side
+-- code stays gated out until real concurrency demand exists.
+ALTER TABLE shared_log ADD COLUMN vote_confidence REAL
+    CHECK (vote_confidence IS NULL OR (vote_confidence >= 0 AND vote_confidence <= 1));
+ALTER TABLE shared_log ADD COLUMN decide_mode TEXT
+    CHECK (decide_mode IS NULL OR decide_mode IN ('fixed','incremental'));
+"""
+
+
 def init_schema(conn: sqlite3.Connection) -> None:
     """Initialize the database schema, applying migrations if needed."""
     conn.executescript(SCHEMA_SQL)
@@ -489,6 +564,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
         conn.executescript(MIGRATION_V5_SQL)
         conn.executescript(MIGRATION_V6_SQL)
         conn.executescript(MIGRATION_V7_SQL)
+        conn.executescript(MIGRATION_V8_SQL)
         conn.execute(
             "INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,)
         )
@@ -511,6 +587,8 @@ def _apply_migrations(conn: sqlite3.Connection, from_version: int, to_version: i
         conn.executescript(MIGRATION_V6_SQL)
     if from_version < 7:
         conn.executescript(MIGRATION_V7_SQL)
+    if from_version < 8:
+        conn.executescript(MIGRATION_V8_SQL)
     conn.execute(
         "INSERT INTO schema_version (version) VALUES (?)", (to_version,)
     )
