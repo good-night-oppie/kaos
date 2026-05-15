@@ -367,7 +367,7 @@ footer .links{display:flex;gap:2rem;justify-content:center;margin-bottom:1rem}
       <span class="cmd">git clone https://github.com/canivel/kaos.git && cd kaos && uv sync</span>
     </div>
     <div class="badges">
-      <span class="badge" style="color:var(--accent2);border-color:rgba(162,155,254,.3)">v0.8.2</span>
+      <span class="badge" style="color:var(--accent2);border-color:rgba(162,155,254,.3)">v0.8.3</span>
       <span class="badge" style="color:#fd79a8;border-color:rgba(253,121,168,.35);background:rgba(253,121,168,.08)">neuroplasticity</span>
       <span class="badge green" style="color:var(--green);border-color:rgba(0,230,118,.25)">8 research integrations</span>
       <span class="badge blue" style="color:var(--cyan);border-color:rgba(24,255,255,.25)">self-organizing</span>
@@ -1459,9 +1459,32 @@ kaos log decide refactor-agent --intent 2
 
     <div class="release">
       <div class="release-header">
+        <span class="release-version">v0.8.3</span>
+        <span class="release-date">May 13, 2026</span>
+        <span class="release-tag">latest</span>
+      </div>
+      <p class="release-category">Finer-grained outcomes, failures, objectives &mdash; and a war-room UI &mdash; <a href="https://github.com/canivel/kaos/blob/main/docs/roadmap/v0.8.3.md" style="color:var(--accent2);font-size:.75rem;text-transform:none;letter-spacing:0">full plan</a></p>
+      <div style="margin:1.2rem 0;border-radius:12px;overflow:hidden;border:1px solid rgba(162,155,254,.18);box-shadow:0 8px 30px rgba(0,0,0,.4)">
+        <img src="docs/demos/kaos_v083.gif" alt="KAOS v0.8.3 — quality score, failure taxonomy, critical-step localizer, ISA/ISC, war room — in the terminal" style="width:100%;display:block">
+        <div style="background:var(--bg2);padding:.6rem .9rem;font-size:.74rem;color:var(--fg2);text-align:center;font-style:italic;border-top:1px solid rgba(255,255,255,.05)">7 scenes, real CLI surface. Quality score &middot; failure taxonomy &middot; critical-step localizer &middot; ISA/ISC &middot; war room.</div>
+      </div>
+      <ul>
+        <li><strong>Track A &mdash; quality score [0,1]</strong> &mdash; <code>record_outcome(quality=...)</code> gives near-misses partial credit; the Wilson ranker reads <code>SUM(quality)</code>. Measured <strong style="color:var(--green)">+4.0pp accuracy</strong> (85.3% &rarr; 89.3%). The variance-reduction hypothesis was measured and did <em>not</em> hold &mdash; reported, not hidden.</li>
+        <li><strong>Track B1 &mdash; failure taxonomy</strong> (arXiv:2509.25370) &mdash; reasoning-class <code>taxonomy_class</code> (memory/reflection/planning/action/system) orthogonal to the execution category. CLI: <code>kaos dream failures --taxonomy-class planning</code>.</li>
+        <li><strong>Track B2 &mdash; critical-step localizer</strong> &mdash; points at the <em>earliest decisive</em> step, not the visible error. Heuristic-first, LLM cached by trajectory shape. <strong style="color:var(--green)">5/5</strong> planted bugs localized within &plusmn;1 step. CLI: <code>kaos dream localize</code>.</li>
+        <li><strong>Track B3 &mdash; Ideal State Artifacts</strong> &mdash; declare what "done" means as verifiable criteria; per-criterion pass/fail is a finer plasticity signal. Composes with A (quality), B1 (taxonomy), B2 (localized step). CLI: <code>kaos ideal-state create|mark|show|list</code>.</li>
+        <li><strong>Track C &mdash; gated out</strong> &mdash; Aegean incremental-quorum columns ship for forward-compat; the decide-side code stays unbuilt per the documented gating rule. Honest no-op.</li>
+        <li><strong>Track D &mdash; war-room UI</strong> &mdash; split layout, colored agent discs, click-to-dossier, LogAct intent kanban, opt-in light theme. <strong>No stack change</strong> &mdash; vanilla single static file + the existing server.</li>
+        <li><strong>Schema v7 &rarr; v8</strong> &mdash; one additive migration; fresh + faithful v7&rarr;v8 upgrade both tested.</li>
+        <li><strong>4 new MCP tools</strong> (<code>dream_localize</code>, <code>ideal_state_create/mark/get</code>). Total surface now <strong>50 tools</strong>.</li>
+        <li><strong>550 unit tests passing</strong> (+85 from 0.8.2; 0 regressions).</li>
+      </ul>
+    </div>
+
+    <div class="release">
+      <div class="release-header">
         <span class="release-version">v0.8.2</span>
         <span class="release-date">April 24, 2026</span>
-        <span class="release-tag">latest</span>
       </div>
       <p class="release-category">Addressing the Whitepaper &sect;6 Limitations &mdash; with KAOS itself &mdash; <a href="papers/kaos-neuroplasticity-whitepaper.html#limits" style="color:var(--accent2);font-size:.75rem;text-transform:none;letter-spacing:0">see whitepaper &sect;6</a></p>
       <ul>

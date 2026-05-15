@@ -2,6 +2,46 @@
 
 All notable changes to KAOS are documented here.
 
+## [0.8.3] - 2026-05-13
+
+### Finer-grained outcomes, failures, objectives — and a war-room UI
+
+One point release, one additive schema migration (v7 → v8), no breaking changes. Four tracks folded into a single release.
+
+**Track A — continuous quality score [0,1]**
+- `record_outcome(quality=...)` — partial credit instead of a binary coin flip; `ValueError` outside `[0,1]` (never silently clamped)
+- Plasticity ranker uses `SUM(quality)` for graded rows, binary path byte-for-byte unchanged when absent
+- CLI `kaos skills outcome <id> --quality Q`; MCP `skill_outcome` gains `quality`
+- **Measured +4.0pp accuracy** (85.3% → 89.3%, 5 seeds). The variance-reduction hypothesis was measured and did **not** hold — reported, not hidden.
+
+**Track B1 — reasoning-class failure taxonomy** (arXiv:2509.25370)
+- `taxonomy_class` (memory/reflection/planning/action/system) orthogonal to the execution `category`; LLM diagnoser emits + caches it
+- CLI `kaos dream failures --taxonomy-class planning`
+
+**Track B2 — critical-step localizer**
+- Reconstructs the agent timeline and points at the *earliest decisive* step, not the visible error; heuristic-first, LLM cached by trajectory shape
+- CLI `kaos dream localize <agent>`; MCP `dream_localize`
+- **Measured 5/5** planted bugs localized within ±1 step
+
+**Track B3 — Ideal State Artifacts (ISA/ISC)** (PAI pattern)
+- Declare "what done looks like" as verifiable criteria; per-criterion pass/fail is a finer plasticity signal than one binary task outcome
+- CLI `kaos ideal-state create|mark|show|list`; MCP `ideal_state_create|mark|get`
+- Composition: ISA quality → Track A graded outcome; failed ISCs group by Track B1 taxonomy; a failing ISC links to Track B2's localized step
+
+**Track C — Aegean incremental quorum: gated out**
+- Forward-compat columns ship; decide-side code intentionally unbuilt per the documented gating rule. Honest no-op, not a shortcut.
+
+**Track D — war-room UI refresh** (Naroh091/hermes-war-room IA, MIT)
+- No stack change — vanilla single static HTML + the existing server. Split layout (mission control ‖ operatives floor), colored agent discs, click-to-dossier, LogAct intent kanban, opt-in light theme (dark default)
+- Additive endpoints only; the original dashboard left intact
+
+### Stats
+
+- **550 unit tests** (+85 from 0.8.2; 0 regressions)
+- MCP surface **46 → 50 tools**
+- 2 new benchmarks (`demo_quality_score_bench/`, `demo_critical_step_bench/`); every prior benchmark re-run with unchanged shape
+- Schema v7 → v8 single additive migration; fresh + v7→v8 upgrade both tested
+
 ## [0.8.2] - 2026-04-24
 
 ### Addressing Whitepaper §6 Limitations Using KAOS Itself
