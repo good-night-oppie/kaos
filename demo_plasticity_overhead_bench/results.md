@@ -10,8 +10,8 @@ Overhead = auto=ON minus auto=OFF baseline. The baseline is the intrinsic SQLite
 
 | Op | p50 auto=ON | p99 auto=ON | p50 auto=OFF | p99 auto=OFF | Overhead p50 | Overhead p99 |
 |---|---:|---:|---:|---:|---:|---:|
-| `record_outcome` | 949.5 µs | 13.36 ms | 934.8 µs | 2.90 ms | 14.7 µs | 10.46 ms |
-| `memory_search` | 1.04 ms | 4.04 ms | 1.08 ms | 2.73 ms | -48.0 µs | 1.31 ms |
-| `agent_complete` | 2.95 ms | 6.85 ms | 2.08 ms | 5.38 ms | 872.6 µs | 1.47 ms |
+| `record_outcome` | 960.8 µs | 5.18 ms | 985.4 µs | 3.04 ms | -24.6 µs | 2.14 ms |
+| `memory_search` | 986.7 µs | 11.12 ms | 1.07 ms | 11.41 ms | -87.0 µs | -297.1 µs |
+| `agent_complete` | 2.96 ms | 6.68 ms | 2.00 ms | 13.26 ms | 961.9 µs | -6581.2 µs |
 
 **Verdict:** OK — within budget.
