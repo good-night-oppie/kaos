@@ -730,6 +730,72 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="ideal_state_create",
+            description=(
+                "Create an Ideal State Artifact (v0.8.3) — declare what "
+                "'done' looks like for a non-trivial task as a list of "
+                "verifiable criteria. Per-criterion outcomes become a "
+                "finer plasticity signal than one binary task result."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "agent_id": {"type": "string"},
+                    "title": {"type": "string"},
+                    "summary": {"type": "string"},
+                    "criteria": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "criterion": {"type": "string"},
+                                "verification": {"type": "string"},
+                            },
+                            "required": ["criterion"],
+                        },
+                    },
+                },
+                "required": ["agent_id", "title", "criteria"],
+            },
+        ),
+        Tool(
+            name="ideal_state_mark",
+            description=(
+                "Mark one Ideal State Criterion passed / failed / skipped. "
+                "On 'failed', pass failure_taxonomy (a reasoning-class: "
+                "memory/reflection/planning/action/system) so consolidation "
+                "can group failed criteria by class."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "isc_id": {"type": "integer"},
+                    "status": {"type": "string",
+                               "enum": ["passed", "failed", "skipped"]},
+                    "failure_taxonomy": {"type": "string"},
+                    "note": {"type": "string"},
+                },
+                "required": ["isc_id", "status"],
+            },
+        ),
+        Tool(
+            name="ideal_state_get",
+            description=(
+                "Fetch an Ideal State Artifact with its criteria and "
+                "computed quality. Pass finalize=true to compute + persist "
+                "the overall status (all passed -> passed; any failed -> "
+                "failed) before returning."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "isa_id": {"type": "integer"},
+                    "finalize": {"type": "boolean", "default": False},
+                },
+                "required": ["isa_id"],
+            },
+        ),
+        Tool(
             name="dream_localize",
             description=(
                 "Find the earliest decisive error in a failed agent's "
@@ -1956,6 +2022,45 @@ async def _dispatch(name: str, args: dict[str, Any]) -> str:
                 "skipped_existing": pol.skipped_existing,
             },
         }, indent=2)
+
+    elif name == "ideal_state_create":
+        from kaos.ideal_state import IdealStateStore
+        store = IdealStateStore(_afs.conn)
+        try:
+            isa_id = store.create(
+                args["agent_id"], args["title"],
+                args.get("summary") or args["title"],
+                args["criteria"],
+            )
+        except ValueError as e:
+            return json.dumps({"error": str(e)}, indent=2)
+        return json.dumps({"isa_id": isa_id,
+                           "criteria": len(args["criteria"])}, indent=2)
+
+    elif name == "ideal_state_mark":
+        from kaos.ideal_state import IdealStateStore
+        store = IdealStateStore(_afs.conn)
+        try:
+            store.mark(args["isc_id"], args["status"],
+                       failure_taxonomy=args.get("failure_taxonomy"),
+                       note=args.get("note"))
+        except ValueError as e:
+            return json.dumps({"error": str(e)}, indent=2)
+        return json.dumps({"isc_id": args["isc_id"],
+                           "status": args["status"]}, indent=2)
+
+    elif name == "ideal_state_get":
+        from kaos.ideal_state import IdealStateStore
+        store = IdealStateStore(_afs.conn)
+        if args.get("finalize"):
+            store.finalize(args["isa_id"])
+        isa = store.get(args["isa_id"])
+        if isa is None:
+            return json.dumps({"error": f"ISA {args['isa_id']} not found"},
+                              indent=2)
+        d = isa.to_dict()
+        d["quality"] = isa.quality
+        return json.dumps(d, indent=2)
 
     elif name == "dream_localize":
         from kaos.dream.phases.localize import localize

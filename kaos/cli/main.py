@@ -2379,6 +2379,154 @@ def dream_show(ctx, run_id: int, db: str):
             console.print(f"  [yellow]Digest file not found on disk: {p}[/yellow]")
 
 
+@cli.group("ideal-state")
+def isa_group():
+    """Ideal State Artifacts — declare what 'done' looks like upfront,
+    verify per-criterion at completion (v0.8.3)."""
+
+
+@isa_group.command("create")
+@click.argument("title")
+@click.option("--agent", required=True, help="Owning agent id")
+@click.option("--summary", default="", help="One-line 'done' summary")
+@click.option("--criterion", "-c", "criteria", multiple=True, required=True,
+              help="A criterion (repeat for several)")
+@click.option("--db", default=DEFAULT_DB, help="Database file path")
+@click.pass_context
+def isa_create(ctx, title: str, agent: str, summary: str,
+               criteria: tuple, db: str):
+    """Create an ISA with one or more criteria.
+
+    Example:
+        kaos ideal-state create "Ship refund endpoint" --agent a1 \\
+            -c "returns 201 on valid input" \\
+            -c "duplicate request is idempotent"
+    """
+    from kaos.ideal_state import IdealStateStore
+    afs = _get_afs(db)
+    try:
+        store = IdealStateStore(afs.conn)
+        try:
+            isa_id = store.create(agent, title, summary or title,
+                                  [{"criterion": c} for c in criteria])
+        except ValueError as e:
+            if _json_err(ctx, str(e)):
+                return
+            console.print(f"[red]{e}[/red]")
+            ctx.exit(1)
+            return
+        result = {"isa_id": isa_id, "title": title,
+                  "criteria": len(criteria)}
+        if _json_out(ctx, result):
+            return
+        console.print(f"[green]ISA #{isa_id}[/green] created — "
+                      f"{len(criteria)} criteria")
+    finally:
+        afs.close()
+
+
+@isa_group.command("mark")
+@click.argument("isc_id", type=int)
+@click.option("--passed", "status", flag_value="passed")
+@click.option("--failed", "status", flag_value="failed")
+@click.option("--skipped", "status", flag_value="skipped")
+@click.option("--taxonomy", default=None,
+              help="When --failed: reasoning-class (Track B1)")
+@click.option("--reason", default=None, help="Optional note")
+@click.option("--db", default=DEFAULT_DB, help="Database file path")
+@click.pass_context
+def isa_mark(ctx, isc_id: int, status: str, taxonomy: str, reason: str,
+             db: str):
+    """Mark a single criterion passed / failed / skipped."""
+    from kaos.ideal_state import IdealStateStore
+    if not status:
+        msg = "specify one of --passed / --failed / --skipped"
+        if _json_err(ctx, msg):
+            return
+        console.print(f"[red]{msg}[/red]")
+        ctx.exit(1)
+        return
+    afs = _get_afs(db)
+    try:
+        store = IdealStateStore(afs.conn)
+        store.mark(isc_id, status, failure_taxonomy=taxonomy, note=reason)
+        if _json_out(ctx, {"isc_id": isc_id, "status": status}):
+            return
+        console.print(f"[green]ISC #{isc_id}[/green] -> {status}")
+    finally:
+        afs.close()
+
+
+@isa_group.command("show")
+@click.argument("isa_id", type=int)
+@click.option("--finalize", is_flag=True,
+              help="Compute + persist overall status before showing")
+@click.option("--db", default=DEFAULT_DB, help="Database file path")
+@click.pass_context
+def isa_show(ctx, isa_id: int, finalize: bool, db: str):
+    """Show an ISA and its criteria."""
+    from kaos.ideal_state import IdealStateStore
+    afs = _get_afs(db)
+    try:
+        store = IdealStateStore(afs.conn)
+        if finalize:
+            store.finalize(isa_id)
+        isa = store.get(isa_id)
+        if isa is None:
+            if _json_err(ctx, f"ISA {isa_id} not found"):
+                return
+            console.print(f"[red]ISA {isa_id} not found[/red]")
+            ctx.exit(1)
+            return
+        if _json_out(ctx, isa.to_dict()):
+            return
+        q = isa.quality
+        console.print(f"[bold]ISA #{isa.isa_id}[/bold] {isa.title}  "
+                      f"[dim]({isa.overall_status or 'pending'})[/dim]")
+        console.print(f"  {isa.summary}")
+        if q is not None:
+            console.print(f"  quality: [cyan]{q:.2f}[/cyan]")
+        for c in isa.criteria:
+            colour = {"passed": "green", "failed": "red",
+                      "skipped": "yellow"}.get(c.status, "white")
+            tx = f" [blue]⦿{c.failure_taxonomy}[/blue]" if c.failure_taxonomy else ""
+            console.print(f"  [{colour}]{c.status:>7}[/{colour}] "
+                          f"#{c.isc_id} {c.criterion}{tx}")
+    finally:
+        afs.close()
+
+
+@isa_group.command("list")
+@click.option("--agent", default=None, help="Filter by agent")
+@click.option("--open", "open_only", is_flag=True,
+              help="Only ISAs still pending")
+@click.option("--db", default=DEFAULT_DB, help="Database file path")
+@click.pass_context
+def isa_list(ctx, agent: str, open_only: bool, db: str):
+    """List ISAs."""
+    from kaos.ideal_state import IdealStateStore
+    afs = _get_afs(db)
+    try:
+        store = IdealStateStore(afs.conn)
+        isas = (store.list_open(agent) if open_only
+                else store.list_all(agent))
+        payload = [{"isa_id": i.isa_id, "title": i.title,
+                    "status": i.overall_status,
+                    "criteria": len(i.criteria),
+                    "quality": i.quality} for i in isas]
+        if _json_out(ctx, payload):
+            return
+        if not isas:
+            console.print("[dim]No ISAs.[/dim]")
+            return
+        for i in isas:
+            st = i.overall_status or "pending"
+            console.print(f"  [cyan]#{i.isa_id}[/cyan] [{st}] "
+                          f"{i.title}  ({len(i.criteria)} criteria)")
+    finally:
+        afs.close()
+
+
 @cli.group("obsidian")
 def obsidian_group():
     """Export a KAOS database to an Obsidian-compatible markdown vault."""
