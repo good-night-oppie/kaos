@@ -77,6 +77,7 @@ class TestUpgradeFromV7:
         "skill_uses": ["quality"],
         "failure_fingerprints": ["taxonomy_class", "taxonomy_subclass"],
         "shared_log": ["vote_confidence", "decide_mode"],
+        "llm_diagnosis_cache": ["taxonomy_class", "taxonomy_subclass"],
     }
 
     def _strip_v8_columns(self, conn, table: str, drop: list[str]) -> None:

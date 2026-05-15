@@ -528,19 +528,39 @@ def _attempt_diagnosis(
             (fp_id,),
         )
         return
-    conn.execute(
-        """
-        UPDATE failure_fingerprints
-        SET category = ?,
-            root_cause = ?,
-            suggested_action = ?,
-            diagnostic_method = ?,
-            diagnosed_at = strftime('%Y-%m-%dT%H:%M:%f','now')
-        WHERE fp_id = ?
-        """,
-        (result.category, result.root_cause, result.suggested_action,
-         result.method, fp_id),
-    )
+    # taxonomy_class / taxonomy_subclass arrived in the v8 migration; fall
+    # back to the pre-v8 column set on older databases.
+    try:
+        conn.execute(
+            """
+            UPDATE failure_fingerprints
+            SET category = ?,
+                root_cause = ?,
+                suggested_action = ?,
+                diagnostic_method = ?,
+                taxonomy_class = ?,
+                taxonomy_subclass = ?,
+                diagnosed_at = strftime('%Y-%m-%dT%H:%M:%f','now')
+            WHERE fp_id = ?
+            """,
+            (result.category, result.root_cause, result.suggested_action,
+             result.method, result.taxonomy_class, result.taxonomy_subclass,
+             fp_id),
+        )
+    except sqlite3.OperationalError:
+        conn.execute(
+            """
+            UPDATE failure_fingerprints
+            SET category = ?,
+                root_cause = ?,
+                suggested_action = ?,
+                diagnostic_method = ?,
+                diagnosed_at = strftime('%Y-%m-%dT%H:%M:%f','now')
+            WHERE fp_id = ?
+            """,
+            (result.category, result.root_cause, result.suggested_action,
+             result.method, fp_id),
+        )
 
 
 def _check_systemic(conn: sqlite3.Connection, fp_id: int) -> None:

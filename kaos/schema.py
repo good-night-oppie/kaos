@@ -496,6 +496,12 @@ ALTER TABLE failure_fingerprints ADD COLUMN taxonomy_class TEXT
       ('memory','reflection','planning','action','system','unknown'));
 ALTER TABLE failure_fingerprints ADD COLUMN taxonomy_subclass TEXT;
 
+-- Track B1: the LLM diagnosis cache (created by the v7 migration) gains
+-- taxonomy columns so an LLM-emitted classification is memoised together
+-- with the diagnosis rather than re-derived on every cache hit.
+ALTER TABLE llm_diagnosis_cache ADD COLUMN taxonomy_class TEXT;
+ALTER TABLE llm_diagnosis_cache ADD COLUMN taxonomy_subclass TEXT;
+
 -- Track B2: earliest-decisive-error localization on a failed trajectory
 CREATE TABLE IF NOT EXISTS critical_steps (
     cs_id           INTEGER PRIMARY KEY AUTOINCREMENT,

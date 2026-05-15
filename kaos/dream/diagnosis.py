@@ -37,6 +37,15 @@ from typing import Any, Callable, Protocol
 CATEGORIES = ("transient", "config", "code", "infra", "unknown")
 
 
+# Track B1 (v0.8.3) — reasoning-class taxonomy borrowed from
+# AgentErrorTaxonomy (arXiv:2509.25370). This is orthogonal to `category`:
+# `category` is execution-flavoured (transient/config/code/infra/unknown);
+# `taxonomy_class` is reasoning-flavoured (where in the agent's cognition
+# the failure originated).
+TAXONOMY_CLASSES = ("memory", "reflection", "planning", "action",
+                    "system", "unknown")
+
+
 @dataclass
 class Diagnosis:
     category: str
@@ -44,6 +53,8 @@ class Diagnosis:
     suggested_action: str | None
     method: str          # "heuristic" | "llm" | "user" | "structured"
     confidence: float    # 0..1
+    taxonomy_class: str | None = None      # one of TAXONOMY_CLASSES
+    taxonomy_subclass: str | None = None   # free-form, e.g. 'connectivity'
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -52,7 +63,27 @@ class Diagnosis:
             "suggested_action": self.suggested_action,
             "method": self.method,
             "confidence": round(self.confidence, 3),
+            "taxonomy_class": self.taxonomy_class,
+            "taxonomy_subclass": self.taxonomy_subclass,
         }
+
+
+# Static taxonomy assignment for the built-in heuristics. Pattern-matching
+# can only see the *symptom*, so the heuristics land almost entirely in
+# `system` and `action` — the higher reasoning classes (memory, reflection,
+# planning) require trajectory context the LLM diagnoser (B1) or the
+# critical-step localizer (B2) supplies. That asymmetry is honest and is
+# exactly why B2 exists.
+_HEURISTIC_TAXONOMY: dict[str, tuple[str, str]] = {
+    "connection_refused":  ("system",  "connectivity"),
+    "rate_limit":          ("system",  "throttling"),
+    "timeout":             ("system",  "timeout"),
+    "auth_failure":        ("system",  "auth"),
+    "code_error":          ("action",  "exception"),
+    "missing_data":        ("action",  "malformed_call"),
+    "resource_exhausted":  ("system",  "resource_exhaustion"),
+    "dns":                 ("system",  "dns"),
+}
 
 
 class Diagnoser(Protocol):
@@ -142,6 +173,9 @@ class TimeoutDiagnoser:
                 suggested_action=("Inspect the tool's control flow for a missing "
                                   "exit condition. Add a bounded retry counter."),
                 method="heuristic", confidence=0.7,
+                # A hang/infinite loop is the tool's own control flow, not an
+                # external system fault — classify it as an action failure.
+                taxonomy_class="action", taxonomy_subclass="hang",
             )
         return Diagnosis(
             category="transient",
@@ -268,10 +302,13 @@ Tool: {tool_name}
 Error: {error}
 
 Respond as STRICT JSON with these keys:
-  "category":         one of "transient", "config", "code", "infra", "unknown"
-  "root_cause":       one-sentence explanation of what went wrong
-  "suggested_action": one-sentence concrete next step
-  "confidence":       float in [0, 1]
+  "category":          one of "transient", "config", "code", "infra", "unknown"
+  "taxonomy_class":    one of "memory", "reflection", "planning", "action", "system", "unknown"
+                       (where in the agent's reasoning the failure originated)
+  "taxonomy_subclass": short free-form label, e.g. "stale_retrieval", "plan_loop"
+  "root_cause":        one-sentence explanation of what went wrong
+  "suggested_action":  one-sentence concrete next step
+  "confidence":        float in [0, 1]
 
 Return the JSON object and nothing else."""
 
@@ -339,12 +376,17 @@ class LLMDiagnoser:
         if parsed is None:
             return None
 
+        tax_class = parsed.get("taxonomy_class")
+        if tax_class not in TAXONOMY_CLASSES:
+            tax_class = "unknown"
         diag = Diagnosis(
             category=parsed.get("category", "unknown"),
             root_cause=parsed.get("root_cause") or "LLM could not determine root cause.",
             suggested_action=parsed.get("suggested_action"),
             method="llm",
             confidence=float(parsed.get("confidence", 0.7) or 0.7),
+            taxonomy_class=tax_class,
+            taxonomy_subclass=parsed.get("taxonomy_subclass"),
         )
         if diag.category not in CATEGORIES:
             diag.category = "unknown"
@@ -354,14 +396,31 @@ class LLMDiagnoser:
     def _cache_get(self, fp: str) -> Diagnosis | None:
         if self._conn is None:
             return None
+        # taxonomy_* columns arrived in the v8 migration; fall back to the
+        # pre-v8 column set on older databases.
         try:
             row = self._conn.execute(
-                "SELECT category, root_cause, suggested_action, confidence "
+                "SELECT category, root_cause, suggested_action, confidence, "
+                "taxonomy_class, taxonomy_subclass "
                 "FROM llm_diagnosis_cache WHERE fingerprint = ?",
                 (fp,),
             ).fetchone()
         except sqlite3.OperationalError:
-            return None
+            try:
+                row = self._conn.execute(
+                    "SELECT category, root_cause, suggested_action, confidence "
+                    "FROM llm_diagnosis_cache WHERE fingerprint = ?",
+                    (fp,),
+                ).fetchone()
+                if row is None:
+                    return None
+                return Diagnosis(
+                    category=row[0], root_cause=row[1] or "",
+                    suggested_action=row[2], method="llm-cached",
+                    confidence=float(row[3] or 0.7),
+                )
+            except sqlite3.OperationalError:
+                return None
         if row is None:
             return None
         return Diagnosis(
@@ -370,6 +429,8 @@ class LLMDiagnoser:
             suggested_action=row[2],
             method="llm-cached",
             confidence=float(row[3] or 0.7),
+            taxonomy_class=row[4],
+            taxonomy_subclass=row[5],
         )
 
     def _cache_put(self, fp: str, diag: Diagnosis) -> None:
@@ -379,13 +440,26 @@ class LLMDiagnoser:
             self._conn.execute(
                 "INSERT OR REPLACE INTO llm_diagnosis_cache "
                 "(fingerprint, category, root_cause, suggested_action, "
-                "confidence, model) VALUES (?, ?, ?, ?, ?, ?)",
+                "confidence, model, taxonomy_class, taxonomy_subclass) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (fp, diag.category, diag.root_cause, diag.suggested_action,
-                 diag.confidence, self._model),
+                 diag.confidence, self._model,
+                 diag.taxonomy_class, diag.taxonomy_subclass),
             )
             self._conn.commit()
         except sqlite3.OperationalError:
-            pass
+            # Pre-v8 cache without taxonomy columns — store the rest.
+            try:
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO llm_diagnosis_cache "
+                    "(fingerprint, category, root_cause, suggested_action, "
+                    "confidence, model) VALUES (?, ?, ?, ?, ?, ?)",
+                    (fp, diag.category, diag.root_cause,
+                     diag.suggested_action, diag.confidence, self._model),
+                )
+                self._conn.commit()
+            except sqlite3.OperationalError:
+                pass
 
 
 _JSON_BLOCK = re.compile(r"\{.*\}", re.DOTALL)
@@ -473,14 +547,15 @@ def diagnose(
         except Exception:
             continue
         if result is not None:
-            return result
+            return _stamp_taxonomy(result, getattr(d, "name", ""))
     if llm_fallback is not None:
         try:
             result = llm_fallback.try_diagnose(tool_name, error, ctx)
         except Exception:
             result = None
         if result is not None:
-            return result
+            # The LLM emits its own taxonomy; only backfill if it didn't.
+            return _stamp_taxonomy(result, getattr(llm_fallback, "name", ""))
     return Diagnosis(
         category="unknown",
         root_cause="No matching diagnostic rule. Needs manual triage or LLM analysis.",
@@ -489,4 +564,32 @@ def diagnose(
                           "recent tool_calls manually."),
         method="heuristic",
         confidence=0.0,
+        taxonomy_class="unknown",
     )
+
+
+def _stamp_taxonomy(diag: Diagnosis, diagnoser_name: str) -> Diagnosis:
+    """Backfill taxonomy from the static heuristic map when the diagnoser
+    didn't set it itself. A diagnoser that already assigned a taxonomy
+    (the timeout-hang branch, the LLM diagnoser) is left untouched."""
+    if diag.taxonomy_class is not None:
+        return diag
+    mapping = _HEURISTIC_TAXONOMY.get(diagnoser_name)
+    if mapping is not None:
+        diag.taxonomy_class, diag.taxonomy_subclass = mapping
+    return diag
+
+
+def classify_taxonomy(
+    tool_name: str,
+    error: str,
+    context: dict[str, Any] | None = None,
+    *,
+    llm_fallback: LLMDiagnoser | None = None,
+) -> tuple[str | None, str | None]:
+    """Convenience: return just ``(taxonomy_class, taxonomy_subclass)`` for
+    callers that want the reasoning-class label without the full Diagnosis
+    (e.g. ISC failure tagging in Track B3). Runs the same pipeline as
+    ``diagnose()``."""
+    d = diagnose(tool_name, error, context, llm_fallback=llm_fallback)
+    return d.taxonomy_class, d.taxonomy_subclass

@@ -2191,8 +2191,13 @@ def dream_systemic(ctx, db: str, ack: int, resolve: int, by: str):
 @dream_group.command("failures")
 @click.option("--db", default=DEFAULT_DB, help="Database file path")
 @click.option("--min-count", default=2, help="Only show fingerprints seen N+ times")
+@click.option("--taxonomy-class",
+              type=click.Choice(["memory", "reflection", "planning",
+                                 "action", "system", "unknown"]),
+              default=None,
+              help="Filter to one reasoning-class taxonomy bucket (v0.8.3)")
 @click.pass_context
-def dream_failures(ctx, db: str, min_count: int):
+def dream_failures(ctx, db: str, min_count: int, taxonomy_class: str | None):
     """List recurring failure fingerprints."""
     from kaos.dream.phases.failures import run as run_failures
     if not Path(db).exists():
@@ -2206,28 +2211,48 @@ def dream_failures(ctx, db: str, min_count: int):
         report = run_failures(afs.conn, min_count_for_recurring=min_count)
     finally:
         afs.close()
-    # Also fetch category info per fp_id
+    # Also fetch category + taxonomy info per fp_id. taxonomy_* columns
+    # arrived in v8; fall back gracefully on older databases.
     import sqlite3 as _sq
     afs2 = _get_afs(db)
     try:
         conn = afs2.conn
         conn.row_factory = _sq.Row
-        cat_rows = {
-            r["fp_id"]: dict(r) for r in conn.execute(
-                "SELECT fp_id, category, root_cause, suggested_action "
-                "FROM failure_fingerprints"
-            ).fetchall()
-        }
+        try:
+            cat_rows = {
+                r["fp_id"]: dict(r) for r in conn.execute(
+                    "SELECT fp_id, category, root_cause, suggested_action, "
+                    "taxonomy_class, taxonomy_subclass "
+                    "FROM failure_fingerprints"
+                ).fetchall()
+            }
+        except _sq.OperationalError:
+            cat_rows = {
+                r["fp_id"]: dict(r) for r in conn.execute(
+                    "SELECT fp_id, category, root_cause, suggested_action "
+                    "FROM failure_fingerprints"
+                ).fetchall()
+            }
     finally:
         afs2.close()
 
+    recurring = report.recurring
+    if taxonomy_class is not None:
+        recurring = [
+            e for e in recurring
+            if (cat_rows.get(e.fp_id, {}).get("taxonomy_class")
+                == taxonomy_class)
+        ]
+
     payload = []
-    for e in report.recurring:
+    for e in recurring:
         info = cat_rows.get(e.fp_id, {})
         payload.append({
             "fp_id": e.fp_id, "fingerprint": e.fingerprint,
             "tool": e.tool_name, "count": e.count,
             "category": info.get("category", "unknown"),
+            "taxonomy_class": info.get("taxonomy_class"),
+            "taxonomy_subclass": info.get("taxonomy_subclass"),
             "root_cause": info.get("root_cause"),
             "suggested_action": info.get("suggested_action"),
             "has_fix": bool(e.fix_summary or e.fix_skill_id),
@@ -2236,19 +2261,25 @@ def dream_failures(ctx, db: str, min_count: int):
         })
     if _json_out(ctx, payload):
         return
-    if not report.recurring:
-        console.print("[yellow]No recurring failures[/yellow]")
+    if not recurring:
+        if taxonomy_class:
+            console.print(f"[yellow]No recurring failures in taxonomy "
+                          f"'{taxonomy_class}'[/yellow]")
+        else:
+            console.print("[yellow]No recurring failures[/yellow]")
         return
     console.print(f"[bold]{report.total_fingerprints} distinct failure fingerprints[/bold] "
-                  f"({len(report.recurring)} recurring):")
-    for e in report.recurring:
+                  f"({len(recurring)} shown):")
+    for e in recurring:
         info = cat_rows.get(e.fp_id, {})
         category = info.get("category") or "unknown"
         cat_colour = {"infra": "red", "config": "yellow", "code": "magenta",
                       "transient": "cyan", "unknown": "white"}.get(category, "white")
+        tax = info.get("taxonomy_class")
+        tax_str = f" [blue]\u29bf{tax}[/blue]" if tax else ""
         fix = "[green](has fix)[/green]" if e.fix_summary or e.fix_skill_id else ""
         console.print(f"  [cyan]#{e.fp_id}[/cyan] "
-                      f"[{cat_colour}]{category}[/{cat_colour}] "
+                      f"[{cat_colour}]{category}[/{cat_colour}]{tax_str} "
                       f"`{e.fingerprint}` "
                       f"{e.tool_name or '?'} \u00d7{e.count} {fix}")
         if info.get("root_cause"):
