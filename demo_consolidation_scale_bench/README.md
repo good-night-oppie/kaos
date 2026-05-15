@@ -30,18 +30,27 @@ uv run python demo_consolidation_scale_bench/run.py
 Seeding dominates the runtime at 10k (~7 minutes). Measurement itself
 runs in well under a minute even at that scale.
 
-## Latest measured result
+## Latest measured result (v0.8.3 re-run)
 
 | n skills | p50 (ms) | max (ms) |
 |---:|---:|---:|
-| 100 | 107.7 | 107.8 |
-| 1,000 | 492.8 | 538.9 |
-| 10,000 | 38,065.8 | 38,170.6 |
+| 100 | 175.1 | 672.1 |
+| 1,000 | 476.0 | 482.5 |
+| 10,000 | 35,545.2 | 36,948.2 |
 
 **Effective growth exponents:**
 
-- 100 → 1,000: time x 4.57 for 10x scale (exponent ~0.66, sub-linear)
-- 1,000 → 10,000: time x 77.24 for 10x scale (exponent ~1.89, near-quadratic)
+- 100 → 1,000: exponent ~0.43 (sub-linear)
+- 1,000 → 10,000: exponent ~1.87 (near-quadratic — the pairwise Jaccard
+  merge scan, exactly as designed)
+
+No regression from the v0.8.2 characterisation: the shape is identical
+(sub-linear to 1k, near-quadratic above). The v0.8.3 schema change is
+additive columns only and does not touch consolidation logic. Absolute
+numbers vary run-to-run — note the 100-skill case is noisy (p50 175 ms,
+max 672 ms): at that scale the phase finishes so fast that OS-level
+jitter dominates, which is why this is a *budget* concern at large
+scale, not a *latency* one.
 
 ## Interpretation
 

@@ -1,28 +1,28 @@
 {
   "scales": [
     {
-      "p50_ms": 107.73,
-      "max_ms": 107.81,
-      "min_ms": 97.73,
+      "p50_ms": 175.13,
+      "max_ms": 672.07,
+      "min_ms": 171.01,
       "samples": 3,
       "n_skills": 100,
-      "seed_seconds": 7.07
+      "seed_seconds": 11.84
     },
     {
-      "p50_ms": 492.82,
-      "max_ms": 538.91,
-      "min_ms": 449.62,
+      "p50_ms": 475.97,
+      "max_ms": 482.49,
+      "min_ms": 450.53,
       "samples": 3,
       "n_skills": 1000,
-      "seed_seconds": 44.78
+      "seed_seconds": 53.28
     },
     {
-      "p50_ms": 38065.83,
-      "max_ms": 38170.57,
-      "min_ms": 37801.17,
+      "p50_ms": 35545.22,
+      "max_ms": 36948.22,
+      "min_ms": 35058.44,
       "samples": 3,
       "n_skills": 10000,
-      "seed_seconds": 442.34
+      "seed_seconds": 470.07
     }
   ],
   "repeats_per_scale": 3
