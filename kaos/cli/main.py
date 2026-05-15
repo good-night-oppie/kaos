@@ -1649,6 +1649,59 @@ def skills_apply(ctx, skill_id: int, params: tuple, db: str):
         afs.close()
 
 
+@skills_group.command("outcome")
+@click.argument("skill_id", type=int)
+@click.option("--success/--fail", "success", default=None,
+              help="Binary outcome")
+@click.option("--quality", type=float, default=None,
+              help="Continuous outcome in [0,1] (v0.8.3). When given, the "
+                   "plasticity ranker uses it instead of the binary flag.")
+@click.option("--agent", default=None, help="Attributing agent id")
+@click.option("--db", default=DEFAULT_DB, help="Database file path")
+@click.pass_context
+def skills_outcome(ctx, skill_id: int, success: bool | None,
+                   quality: float | None, agent: str, db: str):
+    """Record the outcome of applying a skill.
+
+    Examples:
+        kaos skills outcome 5 --success
+        kaos skills outcome 5 --quality 0.75
+        kaos skills outcome 5 --fail --quality 0.0
+    """
+    from kaos.skills import SkillStore
+    if success is None and quality is None:
+        msg = "provide --success/--fail and/or --quality"
+        if _json_err(ctx, msg):
+            return
+        console.print(f"[red]{msg}[/red]")
+        ctx.exit(1)
+        return
+    # If only quality given, derive the binary flag from the midpoint so the
+    # agent_skills aggregate still moves sensibly.
+    eff_success = success if success is not None else (quality >= 0.5)
+    afs = _get_afs(db)
+    try:
+        sk = SkillStore(afs.conn)
+        try:
+            sk.record_outcome(skill_id, eff_success, agent_id=agent,
+                              quality=quality)
+        except ValueError as e:
+            if _json_err(ctx, str(e)):
+                return
+            console.print(f"[red]{e}[/red]")
+            ctx.exit(1)
+            return
+        result = {"skill_id": skill_id, "success": eff_success,
+                  "quality": quality}
+        if _json_out(ctx, result):
+            return
+        q = f", quality={quality}" if quality is not None else ""
+        console.print(f"[green]Outcome recorded[/green]  skill #{skill_id}  "
+                      f"success={eff_success}{q}")
+    finally:
+        afs.close()
+
+
 @skills_group.command("delete")
 @click.argument("skill_id", type=int)
 @click.option("--db", default=DEFAULT_DB, help="Database file path")

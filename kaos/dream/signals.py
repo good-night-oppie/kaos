@@ -66,11 +66,21 @@ def success_rate(uses: int, successes: int) -> float | None:
     return rate
 
 
-def wilson_lower_bound(successes: int, uses: int, z: float = 1.96) -> float:
+def wilson_lower_bound(successes: float, uses: int, z: float = 1.96) -> float:
     """Wilson score interval lower bound — a conservative success estimator.
 
     Penalises small sample sizes more than raw success_rate does, so a skill
     with 10/10 successes outranks a skill with 1/1. Returns 0.0 when uses==0.
+
+    ``successes`` may be fractional (v0.8.3). The Wilson interval is defined
+    for a proportion p̂ = successes / n; nothing in the formula requires the
+    numerator to be an integer. Feeding it ``SUM(quality)`` where each
+    quality ∈ [0, 1] is the standard "continuous Bernoulli" generalisation —
+    p̂ stays in [0, 1] (since SUM(quality) ≤ n), so the variance term
+    p̂(1−p̂) stays non-negative and the sqrt is always real. See Brown,
+    Cai & DasGupta (2001), "Interval Estimation for a Binomial Proportion",
+    on the robustness of the Wilson interval for non-integer effective
+    counts (e.g. weighted / continuous outcomes).
     """
     if uses <= 0:
         return 0.0
@@ -87,7 +97,7 @@ def weighted_score(
     *,
     bm25_score: float,
     uses: int,
-    successes: int,
+    successes: float,
     last_used_at: str | None,
     now: datetime | None = None,
     half_life_days: float = DEFAULT_HALF_LIFE_DAYS,

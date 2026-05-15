@@ -630,13 +630,19 @@ async def list_tools() -> list[Tool]:
             description=(
                 "Record whether applying a skill succeeded or failed. "
                 "Increments use_count and (on success) success_count. "
-                "Used to rank skills by reliability over time."
+                "Used to rank skills by reliability over time. Optionally "
+                "pass a continuous `quality` in [0,1] (v0.8.3) — the "
+                "plasticity ranker uses it instead of the binary flag so "
+                "near-misses get partial credit and the estimator sees "
+                "less noise."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "skill_id": {"type": "integer", "description": "Skill ID"},
                     "success": {"type": "boolean", "description": "True = succeeded, False = failed"},
+                    "quality": {"type": "number", "minimum": 0, "maximum": 1,
+                                "description": "Optional continuous outcome [0,1]"},
                 },
                 "required": ["skill_id", "success"],
             },
@@ -1800,10 +1806,16 @@ async def _dispatch(name: str, args: dict[str, Any]) -> str:
     elif name == "skill_outcome":
         from kaos.skills import SkillStore
         sk = SkillStore(_afs.conn)
-        sk.record_outcome(args["skill_id"], success=args["success"])
+        quality = args.get("quality")
+        try:
+            sk.record_outcome(args["skill_id"], success=args["success"],
+                              quality=quality)
+        except ValueError as e:
+            return json.dumps({"error": str(e)}, indent=2)
         skill = sk.get(args["skill_id"])
         return json.dumps({
             "skill_id": args["skill_id"],
+            "quality": quality,
             "use_count": skill.use_count if skill else None,
             "success_count": skill.success_count if skill else None,
             "success_rate": round(skill.success_count / skill.use_count, 3) if skill and skill.use_count else None,

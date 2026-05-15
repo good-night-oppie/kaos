@@ -208,16 +208,23 @@ class SkillStore:
             # Lazy import: only cost pulled in when weighted ranking requested
             from kaos.dream.signals import weighted_score
 
-            last_used = _last_used_map(self._conn, [s.skill_id for s in skills])
+            ids = [s.skill_id for s in skills]
+            last_used = _last_used_map(self._conn, ids)
+            # v0.8.3: per-skill quality-aware (effective_successes, uses).
+            # Absent for skills with no graded rows → binary fallback.
+            qmap = _quality_signal_map(self._conn, ids)
             # bm25() returns a negative-leaning score; smaller (more negative)
             # = more relevant. Convert to positive by negating.
             bm25_by_id = {r["skill_id"]: -float(r["bm25_raw"] or 0.0) for r in rows}
 
             def score(s: Skill) -> float:
+                eff = qmap.get(s.skill_id)
+                successes, uses = (eff if eff is not None
+                                   else (s.success_count, s.use_count))
                 return weighted_score(
                     bm25_score=bm25_by_id.get(s.skill_id, 1.0),
-                    uses=s.use_count,
-                    successes=s.success_count,
+                    uses=uses,
+                    successes=successes,
                     last_used_at=last_used.get(s.skill_id) or s.updated_at,
                 )
 
@@ -296,6 +303,7 @@ class SkillStore:
         success: bool,
         *,
         agent_id: str | None = None,
+        quality: float | None = None,
         task_hash: str | None = None,
     ) -> None:
         """Record whether applying a skill succeeded or failed.
@@ -305,7 +313,26 @@ class SkillStore:
         introduced in schema v4) so ``kaos dream`` can reason about which
         skills are hot vs cold and which agents drove them. ``skill_uses``
         failures are swallowed for forward-compat with v3 databases.
+
+        Args:
+            skill_id: The skill that was applied.
+            success:  Binary outcome. Still required and still drives the
+                      ``agent_skills.success_count`` aggregate.
+            agent_id: Optional attributing agent.
+            quality:  Optional continuous outcome in ``[0.0, 1.0]`` (v0.8.3).
+                      When provided, the plasticity ranker uses it instead of
+                      the binary ``success`` so near-misses get partial
+                      credit and the Wilson estimator sees less noise. When
+                      ``None`` the row stays purely binary and behaviour is
+                      unchanged. A value outside ``[0, 1]`` raises
+                      ``ValueError`` — we never silently clamp, because a
+                      clamp hides a caller bug.
+            task_hash: Optional per-context bucket id.
         """
+        if quality is not None and not (0.0 <= quality <= 1.0):
+            raise ValueError(
+                f"quality must be in [0.0, 1.0], got {quality!r}"
+            )
         if success:
             self._conn.execute(
                 """
@@ -327,15 +354,26 @@ class SkillStore:
                 """,
                 (skill_id,),
             )
-        # Plasticity telemetry: best-effort
+        # Plasticity telemetry: best-effort. The `quality` column arrived in
+        # schema v8; on a v7 DB the INSERT-with-quality raises OperationalError
+        # and we fall back to the binary insert so old databases keep working.
         try:
             self._conn.execute(
-                "INSERT INTO skill_uses (skill_id, agent_id, success, task_hash) "
-                "VALUES (?, ?, ?, ?)",
-                (skill_id, agent_id, 1 if success else 0, task_hash),
+                "INSERT INTO skill_uses "
+                "(skill_id, agent_id, success, quality, task_hash) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (skill_id, agent_id, 1 if success else 0, quality, task_hash),
             )
         except sqlite3.OperationalError:
-            pass
+            try:
+                self._conn.execute(
+                    "INSERT INTO skill_uses "
+                    "(skill_id, agent_id, success, task_hash) "
+                    "VALUES (?, ?, ?, ?)",
+                    (skill_id, agent_id, 1 if success else 0, task_hash),
+                )
+            except sqlite3.OperationalError:
+                pass
         self._conn.commit()
         # Automatic plasticity (Hebbian): associate with prior skills used
         # by the same agent. Deferred import keeps the module layering clean.
@@ -397,3 +435,47 @@ def _last_used_map(conn: sqlite3.Connection, skill_ids: list[int]) -> dict[int, 
     except sqlite3.OperationalError:
         return {}
     return {r["skill_id"]: r["last_used"] for r in rows if r["last_used"]}
+
+
+def _quality_signal_map(
+    conn: sqlite3.Connection, skill_ids: list[int]
+) -> dict[int, tuple[float, int]]:
+    """Return {skill_id: (effective_successes, uses)} for skills that have
+    at least one quality-graded ``skill_uses`` row (v0.8.3).
+
+    Effective successes = SUM(quality) over rows where quality IS NOT NULL,
+    plus SUM(success) over rows where quality IS NULL — so a skill with a
+    mix of binary and graded outcomes is scored coherently. ``uses`` is the
+    total row count.
+
+    A skill with no quality-graded rows is intentionally absent from the
+    result so the caller falls back to the fast ``agent_skills`` aggregate
+    columns and the binary path is byte-for-byte unchanged. Silently empty
+    on pre-v8 databases (no ``quality`` column).
+    """
+    if not skill_ids:
+        return {}
+    placeholders = ",".join("?" * len(skill_ids))
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT skill_id,
+                   COUNT(*) AS uses,
+                   SUM(CASE WHEN quality IS NOT NULL THEN quality
+                            ELSE success END) AS eff_succ,
+                   SUM(CASE WHEN quality IS NOT NULL THEN 1 ELSE 0 END)
+                       AS graded
+            FROM skill_uses
+            WHERE skill_id IN ({placeholders})
+            GROUP BY skill_id
+            """,
+            skill_ids,
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    out: dict[int, tuple[float, int]] = {}
+    for r in rows:
+        # Only override the binary aggregate when graded data actually exists.
+        if (r["graded"] or 0) > 0:
+            out[r["skill_id"]] = (float(r["eff_succ"] or 0.0), int(r["uses"]))
+    return out
