@@ -2,11 +2,12 @@
 
 **The living synthesis of agentic AI research.** Eight research breakthroughs — neuroplasticity that rewires the library automatically, skills that compound across projects, memory that learns, coordination that requires consensus, context that compresses without loss, agents that co-evolve, failures diagnosed automatically, strategies optimized continuously — unified in one framework. Safe, reliable, and production-grade by default. Self-improving by design.
 
-[![Version](https://img.shields.io/badge/version-0.8.1-blueviolet)]()
+[![Version](https://img.shields.io/badge/version-0.8.3-blueviolet)]()
 [![Python](https://img.shields.io/badge/python-3.11+-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-blue)]()
 [![Research](https://img.shields.io/badge/research%20integrations-8-brightgreen)]()
 [![Neuroplasticity](https://img.shields.io/badge/neuroplasticity-v0.8.1-fd79a8)]()
+[![MCP tools](https://img.shields.io/badge/MCP%20tools-50-00DC82)]()
 
 > KAOS doesn't build from scratch — it identifies the best solution to each hard problem in agentic AI and integrates it faithfully. Every capability traces back to a proven paper or open-source project. We add new integrations as we find synergy and reason to include them.
 

@@ -2,6 +2,63 @@
 
 All notable changes to KAOS are documented here.
 
+## [0.8.3] - 2026-05-13
+
+### Finer-grained outcomes, failures, objectives — and a war-room UI
+
+One point release, one additive schema migration (v7 → v8), no breaking changes. Folds four tracks that were originally scoped as separate releases. Full plan: [docs/roadmap/v0.8.3.md](docs/roadmap/v0.8.3.md).
+
+**Track A — continuous quality score [0,1]**
+- `SkillStore.record_outcome(quality=...)` — optional partial-credit outcome in `[0,1]`; `ValueError` outside range (never silently clamped)
+- `_quality_signal_map()` feeds the plasticity ranker `SUM(quality)` for graded rows, `SUM(success)` for binary, absent when no graded rows so the binary path is byte-for-byte unchanged
+- `wilson_lower_bound` typed for float successes with a sourced note on the continuous-Bernoulli generalisation (Brown/Cai/DasGupta 2001)
+- CLI `kaos skills outcome <id> [--success|--fail] [--quality Q]`; MCP `skill_outcome` gains `quality`
+- **Measured: +4.0pp accuracy (85.3% → 89.3%)** across 5 seeds — `demo_quality_score_bench/`. The variance-reduction hypothesis did *not* hold and the benchmark reports that honestly.
+
+**Track B1 — reasoning-class failure taxonomy** (arXiv:2509.25370)
+- `taxonomy_class` (memory/reflection/planning/action/system/unknown) + free-form `taxonomy_subclass`, orthogonal to the execution-flavoured `category`
+- 8 heuristics post-stamped; `LLMDiagnoser` emits + caches taxonomy; `classify_taxonomy()` helper
+- CLI `kaos dream failures --taxonomy-class planning`
+
+**Track B2 — critical-step localizer**
+- `kaos/dream/phases/localize.py` — reconstructs the agent's `tool_calls + shared_log` timeline and points at the *earliest decisive* step, not the visible error
+- Heuristic-first; LLM only below the confidence floor, cached by trajectory-shape fingerprint
+- CLI `kaos dream localize <agent_id>`; MCP `dream_localize`
+- **Measured: 5/5 planted-bug trajectories localized within ±1 step** (gate ≥4/5) — `demo_critical_step_bench/`
+
+**Track B3 — Ideal State Artifacts (ISA/ISC)** (PAI pattern)
+- `kaos/ideal_state.py` — declare "what done looks like" as verifiable criteria; per-criterion pass/fail is a finer plasticity signal than one binary task outcome
+- CLI `kaos ideal-state create|mark|show|list`; MCP `ideal_state_create|mark|get`
+- **Track composition**: `record_skill_outcome()` bridges ISA quality → Track A graded outcome; `failed_criteria_by_taxonomy()` groups by Track B1; `link_critical_step()` ties a failing ISC to Track B2's localized step
+
+**Track C — Aegean incremental quorum: gated out**
+- The forward-compat columns `shared_log.vote_confidence` / `decide_mode` ship in the v8 migration, but the decide-side code stays unbuilt per the documented gating rule (no ≥5-concurrent-agent deployments, no latency issue, no request). Honest no-op, not a shortcut.
+
+**Track D — war-room UI refresh** (Naroh091/hermes-war-room IA, MIT)
+- **No stack change**: vanilla single static HTML file + the existing Starlette server. No Nuxt/Vue/Bun, no new dependency, no schema change
+- New `kaos/ui/static/warroom.html`: split layout (mission control ‖ operatives floor), deterministic colored monogram discs, click-to-dossier slide-over, LogAct intent kanban, light/dark toggle (dark default, persisted)
+- Additive endpoints: `/api/agents/floor`, `/api/agents/{id}/dossier`, `/api/intents/kanban` + `agent_hue()`; existing routes untouched
+- Linked from the dashboard topbar; the original 1583-line dashboard is left intact (zero regression risk)
+
+### Schema v7 → v8 (additive)
+
+`skill_uses.quality`; `failure_fingerprints.taxonomy_class/subclass`; `llm_diagnosis_cache.taxonomy_class/subclass`; new `critical_steps`, `ideal_states`, `ideal_state_criteria` tables; forward-compat `shared_log.vote_confidence/decide_mode`. Single-shot migration; fresh-DB and faithful v7→v8 upgrade paths both tested.
+
+### Stats
+
+- **550 unit tests passing** (+85 from 0.8.2; 0 regressions)
+- MCP surface **46 → 50 tools**
+- 2 new benchmark folders (`demo_quality_score_bench/`, `demo_critical_step_bench/`); every prior benchmark re-run with unchanged numbers
+- `record_outcome` hot-path overhead still negligible with the quality column
+
+### Honest limits that remain
+
+- §6.1 ARC-AGI-3 still a simulation (unchanged from 0.8.2)
+- Quality variance-reduction was hypothesised, measured, and did not hold — reported, not hidden
+- Pure pattern-matching only reaches the system/action taxonomy classes; the higher reasoning classes need the LLM diagnoser or the localizer
+- ISA authoring is manual (LLM-generated ISAs explicitly deferred)
+- Aegean intentionally unbuilt until real concurrency demand exists
+
 ## [0.8.2] - 2026-04-24
 
 ### Addressing Whitepaper §6 Limitations Using KAOS Itself
