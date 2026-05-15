@@ -443,6 +443,10 @@ input{font-family:inherit;font-size:13px}
         <button class="view-btn" onclick="setView('graph')">◈ Graph</button>
       </div>
       <div id="sse-indicator" title="Live stream"></div>
+      <a id="btn-warroom" title="War Room — agent floor + intent kanban"
+         style="background:var(--bg3);border:1px solid var(--bg4);
+                color:var(--fg);padding:5px 12px;border-radius:6px;
+                font-size:12px;text-decoration:none">⚔ War Room</a>
       <select id="project-selector"></select>
       <button id="btn-add-project" onclick="openAddProject()">+ Project</button>
       <button id="btn-refresh" onclick="fullRefresh()">↻ Refresh</button>
@@ -573,6 +577,15 @@ const S = {
   view: 'timeline',  // 'timeline' | 'graph'
   cy: null,
 };
+
+// War Room link — carry the active ?db= through (Track D, v0.8.3)
+(() => {
+  const wr = document.getElementById('btn-warroom');
+  if (wr) {
+    const dbq = new URLSearchParams(location.search).get('db');
+    wr.href = './warroom.html' + (dbq ? '?db=' + encodeURIComponent(dbq) : '');
+  }
+})();
 
 // ── Colors ────────────────────────────────────────────────────────────────
 const STATUS_COLOR = {

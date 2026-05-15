@@ -9,6 +9,7 @@ Launch via: kaos ui [--db PATH] [--port 8765]
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -122,6 +123,14 @@ def _json(data, status=200) -> JSONResponse:
 
 def _err(msg: str, status=400) -> JSONResponse:
     return JSONResponse({"error": msg}, status_code=status)
+
+
+def agent_hue(agent_id: str) -> int:
+    """Deterministic 0-359 hue for an agent id. Stable across reloads and
+    processes — the war-room floor and the intent kanban color the same
+    agent identically (Track D, v0.8.3). Pure function, unit-testable."""
+    h = hashlib.sha256((agent_id or "").encode("utf-8", "replace")).hexdigest()
+    return int(h[:6], 16) % 360
 
 
 def _load_projects() -> list[dict]:
@@ -756,10 +765,133 @@ async def api_events_stream(request: Request) -> StreamingResponse:
 
 # ── App ────────────────────────────────────────────────────────────────────
 
+async def api_agents_floor(request: Request) -> JSONResponse:
+    """GET /api/agents/floor?db=PATH — the operatives-floor view (Track D).
+
+    One card per agent: deterministic colour, live status, elapsed time.
+    Pure read over data that already exists; no schema dependency on the
+    v8 additions, so it works on any KAOS database."""
+    db = _db_path(request)
+    try:
+        rows = _rows(db, """
+            SELECT a.agent_id, a.name, a.status, a.created_at,
+                   a.last_heartbeat,
+                   COALESCE(tc.cnt, 0) AS tool_calls,
+                   COALESCE(tc.errs, 0) AS tool_errors
+            FROM agents a
+            LEFT JOIN (
+                SELECT agent_id, COUNT(*) AS cnt,
+                       SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) AS errs
+                FROM tool_calls GROUP BY agent_id
+            ) tc ON tc.agent_id = a.agent_id
+            ORDER BY a.created_at DESC
+        """)
+        for r in rows:
+            r["hue"] = agent_hue(r["agent_id"])
+            r["monogram"] = (r.get("name") or r["agent_id"] or "?")[:2].upper()
+        return _json(rows)
+    except Exception as e:
+        return _err(str(e), 500)
+
+
+async def api_agent_dossier(request: Request) -> JSONResponse:
+    """GET /api/agents/{id}/dossier?db=PATH — drill-in for one agent.
+
+    Aggregates the agent's skills used, memories written, shared-log
+    activity, and recent tool calls. Read-only; degrades gracefully on
+    older databases (each block is independently try/excepted)."""
+    db = _db_path(request)
+    agent_id = request.path_params["id"]
+    out: dict = {"agent_id": agent_id, "hue": agent_hue(agent_id)}
+    try:
+        out["agent"] = _one(db,
+            "SELECT agent_id, name, status, created_at, last_heartbeat "
+            "FROM agents WHERE agent_id = ?", (agent_id,))
+    except Exception:
+        out["agent"] = None
+    try:
+        out["skills_used"] = _rows(db, """
+            SELECT s.skill_id, s.name,
+                   COUNT(*) AS uses,
+                   SUM(su.success) AS successes
+            FROM skill_uses su JOIN agent_skills s
+              ON s.skill_id = su.skill_id
+            WHERE su.agent_id = ?
+            GROUP BY s.skill_id ORDER BY uses DESC LIMIT 20
+        """, (agent_id,))
+    except Exception:
+        out["skills_used"] = []
+    try:
+        out["memories"] = _rows(db,
+            "SELECT memory_id, type, key, substr(content,1,160) AS preview, "
+            "created_at FROM memory WHERE agent_id = ? "
+            "ORDER BY created_at DESC LIMIT 20", (agent_id,))
+    except Exception:
+        out["memories"] = []
+    try:
+        out["shared_log"] = _rows(db,
+            "SELECT log_id, position, type, substr(payload,1,160) AS payload, "
+            "created_at FROM shared_log WHERE agent_id = ? "
+            "ORDER BY position DESC LIMIT 20", (agent_id,))
+    except Exception:
+        out["shared_log"] = []
+    try:
+        out["recent_tool_calls"] = _rows(db,
+            "SELECT call_id, tool_name, status, "
+            "substr(COALESCE(error_message,''),1,160) AS error, started_at "
+            "FROM tool_calls WHERE agent_id = ? "
+            "ORDER BY started_at DESC LIMIT 20", (agent_id,))
+    except Exception:
+        out["recent_tool_calls"] = []
+    return _json(out)
+
+
+async def api_intents_kanban(request: Request) -> JSONResponse:
+    """GET /api/intents/kanban?db=PATH — LogAct intents grouped by
+    lifecycle (Track D). Pure read over shared_log; no schema change."""
+    db = _db_path(request)
+    try:
+        intents = _rows(db,
+            "SELECT log_id, agent_id, position, "
+            "substr(payload,1,200) AS payload, created_at "
+            "FROM shared_log WHERE type='intent' "
+            "ORDER BY position DESC LIMIT 200")
+        votes = _rows(db,
+            "SELECT ref_id, COUNT(*) AS n FROM shared_log "
+            "WHERE type='vote' GROUP BY ref_id")
+        decisions = {r["ref_id"] for r in _rows(db,
+            "SELECT DISTINCT ref_id FROM shared_log WHERE type='decision'")}
+        terminal = {r["ref_id"] for r in _rows(db,
+            "SELECT DISTINCT ref_id FROM shared_log "
+            "WHERE type IN ('commit','abort')")}
+        vote_by = {r["ref_id"]: r["n"] for r in votes}
+        cols = {"proposed": [], "voting": [], "decided": [], "terminal": []}
+        for it in intents:
+            lid = it["log_id"]
+            it["votes"] = vote_by.get(lid, 0)
+            it["hue"] = agent_hue(it["agent_id"])
+            if lid in terminal:
+                cols["terminal"].append(it)
+            elif lid in decisions:
+                cols["decided"].append(it)
+            elif vote_by.get(lid):
+                cols["voting"].append(it)
+            else:
+                cols["proposed"].append(it)
+        return _json(cols)
+    except Exception as e:
+        return _err(str(e), 500)
+
+
 def create_app() -> Starlette:
     routes = [
         Route("/api/stats", api_stats),
         Route("/api/agents", api_agents),
+        # NOTE: literal routes before the {id} catch-all so "floor" and
+        # "kanban" are not captured as an agent id.
+        Route("/api/agents/floor", api_agents_floor),
+        Route("/api/intents/kanban", api_intents_kanban),
+        Route("/api/agents/{id}/dossier", api_agent_dossier),
         Route("/api/agents/{id}", api_agent_detail),
         Route("/api/agents/{id}/events", api_agent_events),
         Route("/api/agents/{id}/tool_calls", api_agent_tool_calls),

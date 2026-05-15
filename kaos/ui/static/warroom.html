@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KAOS — War Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  /* dark (default) */
+  --bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;
+  --fg:#e4e4ef;--fg2:#9494a8;--fg3:#5a5a72;
+  --line:rgba(255,255,255,.07);
+  --accent:#00DC82;--accent2:#a29bfe;
+  --red:#ff5252;--yellow:#ffd166;--cyan:#18ffff;
+  --mono:'SFMono-Regular',Consolas,Menlo,monospace;
+  --sans:'Public Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --radius:14px;
+}
+html[data-theme="light"]{
+  --bg:#f6f7f9;--bg2:#ffffff;--bg3:#eef0f3;--bg4:#e2e5ea;
+  --fg:#1a1d24;--fg2:#5a6072;--fg3:#9aa0b0;
+  --line:rgba(0,0,0,.08);
+  --accent:#00C16A;--accent2:#6c5ce7;
+}
+html,body{height:100%;background:var(--bg);color:var(--fg);
+  font-family:var(--sans);font-size:14px;overflow:hidden}
+a{color:var(--accent2);text-decoration:none}
+button{cursor:pointer;border:none;font-family:inherit;font-size:13px;background:none;color:inherit}
+::-webkit-scrollbar{width:7px;height:7px}
+::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:4px}
+
+#app{display:flex;flex-direction:column;height:100vh}
+#topbar{display:flex;align-items:center;gap:14px;height:56px;
+  padding:0 20px;background:var(--bg2);border-bottom:1px solid var(--line);
+  flex-shrink:0}
+.logo{font-family:var(--mono);font-weight:700;font-size:1.15rem;
+  letter-spacing:3px}
+.logo span{color:var(--accent)}
+.tag{font-size:.72rem;font-family:var(--mono);color:var(--fg3);
+  text-transform:uppercase;letter-spacing:2px}
+#topbar .right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.btn{padding:6px 12px;border-radius:8px;background:var(--bg3);
+  color:var(--fg);font-size:12px;border:1px solid var(--line)}
+.btn:hover{border-color:var(--accent)}
+
+#main{flex:1;display:flex;gap:18px;padding:18px;overflow:hidden}
+.col{background:var(--bg2);border:1px solid var(--line);
+  border-radius:var(--radius);display:flex;flex-direction:column;
+  overflow:hidden}
+#mission{flex:0 0 46%;}
+#floor{flex:1}
+.col-head{padding:14px 18px;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:10px;flex-shrink:0}
+.col-head h2{font-size:1rem;font-weight:700}
+.col-head .sub{font-size:.74rem;color:var(--fg3);font-family:var(--mono)}
+.col-body{flex:1;overflow:auto;padding:16px 18px}
+
+/* kanban */
+.kanban{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;
+  height:100%}
+.kcol{background:var(--bg);border:1px solid var(--line);border-radius:10px;
+  display:flex;flex-direction:column;overflow:hidden}
+.kcol h3{font-size:.7rem;text-transform:uppercase;letter-spacing:1.5px;
+  padding:10px 12px;color:var(--fg2);border-bottom:1px solid var(--line);
+  font-family:var(--mono);display:flex;justify-content:space-between}
+.kcol .cards{flex:1;overflow:auto;padding:10px;display:flex;
+  flex-direction:column;gap:8px}
+.card{background:var(--bg2);border:1px solid var(--line);
+  border-left:3px solid var(--c);border-radius:8px;padding:10px 12px;
+  font-size:.82rem;cursor:pointer;transition:transform .12s}
+.card:hover{transform:translateY(-2px)}
+.card .act{color:var(--fg);line-height:1.4;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;
+  overflow:hidden}
+.card .meta{margin-top:6px;font-family:var(--mono);font-size:.68rem;
+  color:var(--fg3);display:flex;gap:10px}
+
+/* operatives floor */
+.fl-grid{display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px}
+.op{background:var(--bg);border:1px solid var(--line);border-radius:12px;
+  padding:18px;text-align:center;cursor:pointer;transition:transform .12s,border-color .12s}
+.op:hover{transform:translateY(-3px);border-color:var(--c)}
+.op .disc{width:64px;height:64px;border-radius:50%;margin:0 auto 12px;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-weight:700;font-size:1.4rem;color:#fff;
+  background:var(--c);box-shadow:0 6px 20px -6px var(--c)}
+.op .nm{font-weight:600;font-size:.92rem;margin-bottom:3px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.op .role{font-size:.7rem;color:var(--fg3);font-family:var(--mono);
+  margin-bottom:8px}
+.op .st{display:inline-block;font-size:.66rem;font-family:var(--mono);
+  padding:3px 9px;border-radius:20px;text-transform:uppercase;
+  letter-spacing:.5px}
+.st.running{background:rgba(0,220,130,.15);color:var(--accent)}
+.st.complete{background:rgba(162,155,254,.15);color:var(--accent2)}
+.st.failed{background:rgba(255,82,82,.15);color:var(--red)}
+.st.idle,.st.spawned{background:var(--bg4);color:var(--fg2)}
+.op .ln{margin-top:8px;font-size:.66rem;font-family:var(--mono);
+  color:var(--fg3)}
+
+/* dossier slide-over */
+#scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);
+  opacity:0;pointer-events:none;transition:opacity .2s;z-index:40}
+#scrim.on{opacity:1;pointer-events:auto}
+#dossier{position:fixed;top:0;right:0;height:100vh;width:520px;
+  max-width:92vw;background:var(--bg2);border-left:1px solid var(--line);
+  transform:translateX(100%);transition:transform .25s;z-index:50;
+  display:flex;flex-direction:column}
+#dossier.on{transform:translateX(0)}
+#dossier .dh{padding:20px;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:14px}
+#dossier .dh .disc{width:52px;height:52px;border-radius:50%;color:#fff;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-weight:700;background:var(--c)}
+#dossier .db{flex:1;overflow:auto;padding:20px}
+#dossier h4{font-size:.72rem;text-transform:uppercase;letter-spacing:1.5px;
+  color:var(--fg2);font-family:var(--mono);margin:18px 0 8px}
+#dossier h4:first-child{margin-top:0}
+.row{font-size:.8rem;padding:7px 10px;background:var(--bg);
+  border:1px solid var(--line);border-radius:7px;margin-bottom:6px;
+  font-family:var(--mono);color:var(--fg2);word-break:break-word}
+.row b{color:var(--fg);font-weight:600}
+.close{margin-left:auto;font-size:1.4rem;color:var(--fg3);padding:4px 10px}
+.empty{color:var(--fg3);font-size:.78rem;font-style:italic}
+@media(max-width:1100px){
+  #main{flex-direction:column;overflow:auto}
+  #mission{flex:none;height:46vh}#floor{flex:none}
+  .kanban{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <div class="logo"><span>K</span>AOS</div>
+    <span class="tag">War Room</span>
+    <div class="right">
+      <a class="btn" href="./index.html" id="dashLink">↩ Dashboard</a>
+      <button class="btn" id="themeBtn">◐ Theme</button>
+    </div>
+  </div>
+  <div id="main">
+    <div class="col" id="mission">
+      <div class="col-head">
+        <h2>Mission Control</h2>
+        <span class="sub" id="intentCount">— intents</span>
+      </div>
+      <div class="col-body">
+        <div class="kanban" id="kanban"></div>
+      </div>
+    </div>
+    <div class="col" id="floor">
+      <div class="col-head">
+        <h2>Operatives Floor</h2>
+        <span class="sub" id="agentCount">— agents</span>
+      </div>
+      <div class="col-body">
+        <div class="fl-grid" id="flGrid"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="scrim"></div>
+<aside id="dossier">
+  <div class="dh">
+    <div class="disc" id="doDisc">??</div>
+    <div>
+      <div id="doName" style="font-weight:700;font-size:1.05rem"></div>
+      <div id="doMeta" style="font-size:.72rem;color:var(--fg3);font-family:var(--mono)"></div>
+    </div>
+    <button class="close" id="doClose">×</button>
+  </div>
+  <div class="db" id="doBody"></div>
+</aside>
+
+<script>
+const qs = new URLSearchParams(location.search);
+const DB = qs.get('db') || '';
+const api = (p) => fetch(p + (p.includes('?')?'&':'?') + 'db=' + encodeURIComponent(DB)).then(r=>r.json());
+const hsl = (h) => `hsl(${h} 62% 52%)`;
+const esc = (s) => (s==null?'':String(s)).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+// preserve ?db= on the dashboard link
+if (DB) document.getElementById('dashLink').href = './index.html?db=' + encodeURIComponent(DB);
+
+// theme toggle, default dark, persisted
+const root = document.documentElement;
+const savedTheme = localStorage.getItem('kaos-theme');
+if (savedTheme === 'light') root.setAttribute('data-theme','light');
+document.getElementById('themeBtn').onclick = () => {
+  const isLight = root.getAttribute('data-theme') === 'light';
+  if (isLight){ root.removeAttribute('data-theme'); localStorage.setItem('kaos-theme','dark'); }
+  else { root.setAttribute('data-theme','light'); localStorage.setItem('kaos-theme','light'); }
+};
+
+const KCOLS = [
+  ['proposed','Proposed'],['voting','Voting'],
+  ['decided','Decided'],['terminal','Done']
+];
+
+async function loadKanban(){
+  const cols = await api('/api/intents/kanban').catch(()=>({}));
+  const total = Object.values(cols).reduce((a,c)=>a+(c?c.length:0),0);
+  document.getElementById('intentCount').textContent = total + ' intents';
+  const el = document.getElementById('kanban');
+  el.innerHTML = '';
+  for (const [key,label] of KCOLS){
+    const items = cols[key] || [];
+    const col = document.createElement('div');
+    col.className = 'kcol';
+    col.innerHTML = `<h3><span>${label}</span><span>${items.length}</span></h3>`;
+    const wrap = document.createElement('div'); wrap.className='cards';
+    for (const it of items){
+      let action = '';
+      try { action = JSON.parse(it.payload).action || it.payload; }
+      catch { action = it.payload; }
+      const c = document.createElement('div');
+      c.className='card'; c.style.setProperty('--c', hsl(it.hue));
+      c.innerHTML = `<div class="act">${esc(action).slice(0,180)}</div>
+        <div class="meta"><span>${esc(it.agent_id).slice(0,12)}</span>
+        <span>▲ ${it.votes}</span></div>`;
+      c.onclick = () => openDossier(it.agent_id, it.hue);
+      wrap.appendChild(c);
+    }
+    if (!items.length){
+      const e=document.createElement('div'); e.className='empty';
+      e.textContent='—'; wrap.appendChild(e);
+    }
+    col.appendChild(wrap); el.appendChild(col);
+  }
+}
+
+async function loadFloor(){
+  const ags = await api('/api/agents/floor').catch(()=>[]);
+  document.getElementById('agentCount').textContent = ags.length + ' agents';
+  const g = document.getElementById('flGrid'); g.innerHTML='';
+  if (!ags.length){
+    g.innerHTML='<div class="empty">No agents in this project yet.</div>';
+    return;
+  }
+  for (const a of ags){
+    const d = document.createElement('div');
+    d.className='op'; d.style.setProperty('--c', hsl(a.hue));
+    const st = (a.status||'idle').toLowerCase();
+    d.innerHTML = `
+      <div class="disc">${esc(a.monogram)}</div>
+      <div class="nm">${esc(a.name||a.agent_id)}</div>
+      <div class="role">${esc(a.agent_id).slice(0,14)}</div>
+      <span class="st ${st}">${esc(st)}</span>
+      <div class="ln">${a.tool_calls} calls · ${a.tool_errors} err</div>`;
+    d.onclick = () => openDossier(a.agent_id, a.hue);
+    g.appendChild(d);
+  }
+}
+
+const scrim = document.getElementById('scrim');
+const dossier = document.getElementById('dossier');
+function closeDossier(){ scrim.classList.remove('on'); dossier.classList.remove('on'); }
+scrim.onclick = closeDossier;
+document.getElementById('doClose').onclick = closeDossier;
+
+function block(title, items, render){
+  if (!items || !items.length)
+    return `<h4>${title}</h4><div class="empty">none</div>`;
+  return `<h4>${title}</h4>` + items.map(render).join('');
+}
+
+async function openDossier(agentId, hue){
+  scrim.classList.add('on'); dossier.classList.add('on');
+  document.getElementById('doDisc').style.setProperty('--c', hsl(hue));
+  const d = await api('/api/agents/'+encodeURIComponent(agentId)+'/dossier')
+              .catch(()=>({}));
+  const ag = d.agent || {};
+  document.getElementById('doDisc').textContent =
+    (ag.name||agentId||'?').slice(0,2).toUpperCase();
+  document.getElementById('doName').textContent = ag.name || agentId;
+  document.getElementById('doMeta').textContent =
+    (ag.status||'?') + ' · ' + (ag.created_at||'');
+  document.getElementById('doBody').innerHTML =
+    block('Skills used', d.skills_used, s =>
+      `<div class="row"><b>${esc(s.name)}</b> — ${s.uses} uses, ${s.successes||0} ok</div>`) +
+    block('Memories written', d.memories, m =>
+      `<div class="row"><b>${esc(m.type)}</b> ${esc(m.key||'')}<br>${esc(m.preview)}</div>`) +
+    block('Shared log', d.shared_log, l =>
+      `<div class="row"><b>${esc(l.type)}</b> #${l.position} ${esc(l.payload).slice(0,120)}</div>`) +
+    block('Recent tool calls', d.recent_tool_calls, t =>
+      `<div class="row"><b>${esc(t.tool_name)}</b> [${esc(t.status)}]${t.error?'<br>'+esc(t.error):''}</div>`);
+}
+
+async function tick(){ await Promise.all([loadKanban(), loadFloor()]); }
+tick();
+setInterval(tick, 5000);
+window.addEventListener('keydown', e => { if(e.key==='Escape') closeDossier(); });
+</script>
+</body>
+</html>
