@@ -20,8 +20,14 @@ from kaos.dream.phases import synthesis as synth_phase
 from world import DOMAINS, canonical_rule
 from queries import Query
 
-K_RAW = 8
-K_KEEP_ALL = 30   # the long-context arm gets a bigger budget, fairly
+K_RAW = 25        # retrieval budget (uniform across ALL arms)
+# B2 "keep-everything" = the ENTIRE history in context (MemoryBench's
+# RAG-all baseline). Not a sample — the whole point of the arm is that
+# the decisive fact, IF it were ever written, would be present. The
+# gates then show even that cannot answer the hard classes (the rule is
+# never written in any single memory by construction).
+_STOP = {"what", "was", "the", "for", "and", "with", "did", "are",
+         "this", "that", "from", "into", "your", "you", "incident"}
 
 
 @dataclass
@@ -35,8 +41,8 @@ def _search(conn, query_text: str, *, limit: int,
     mem = MemoryStore(conn)
     try:
         # FTS-safe: OR the salient tokens (mirrors realistic UI search).
-        toks = [t for t in query_text.lower().replace("?", " ").split()
-                if len(t) > 2][:12]
+        raw = query_text.lower().replace("?", " ").replace("-", " ").split()
+        toks = [t for t in raw if len(t) > 2 and t not in _STOP][:12]
         q = " OR ".join(toks) if toks else query_text
         res = mem.search(q, limit=limit * 3, rank="weighted")
     except Exception:
@@ -55,13 +61,19 @@ def _claude_cli(prompt: str, cache: dict, *, timeout: int = 90) -> str:
     """Cluster-blind synthesizer via the Claude Code CLI. Cached on disk by
     the synthesis module's fingerprint (cache dict persisted by run.py)."""
     import os
+    import shutil
     import subprocess
+    exe = shutil.which("claude")
+    if not exe:
+        return ""
+    # Scrub the nested-session guard vars so the CLI runs headless.
     env = {k: v for k, v in os.environ.items()
            if k not in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")}
     try:
         p = subprocess.run(
-            ["claude", "-p", prompt],
+            [exe, "-p", prompt],
             capture_output=True, text=True, timeout=timeout, env=env,
+            shell=False,
         )
         return (p.stdout or "").strip()
     except Exception:
@@ -91,15 +103,11 @@ def retrieve(arm: str, db_path: str, q: Query) -> Retrieved:
     try:
         conn = k.conn
         if arm == "B2":
-            # keep-everything: budgeted, position-randomized dump.
+            # keep-everything: the ENTIRE history is "in context".
             rows = conn.execute(
-                "SELECT memory_id, content FROM memory "
-                "WHERE type != 'insight'"
+                "SELECT content FROM memory WHERE type != 'insight'"
             ).fetchall()
-            rng = random.Random(hash(q.qid) & 0xffffffff)
-            rng.shuffle(rows)
-            texts = [c for _i, c in rows[:K_KEEP_ALL]]
-            return Retrieved(texts, any_synth=False)
+            return Retrieved([c for (c,) in rows], any_synth=False)
 
         if arm == "B3":
             # cost-matched: deterministic query expansion (no LLM), token
@@ -159,19 +167,14 @@ def retrieve_all(arm: str, db_path: str,
     out: list[Retrieved] = []
     try:
         conn = k.conn
-        all_rows = None
+        b2_all = None
         if arm == "B2":
-            all_rows = conn.execute(
-                "SELECT memory_id, content FROM memory "
-                "WHERE type != 'insight'"
-            ).fetchall()
+            b2_all = [c for (c,) in conn.execute(
+                "SELECT content FROM memory WHERE type != 'insight'"
+            ).fetchall()]
         for q in queries:
             if arm == "B2":
-                rng = random.Random(hash(q.qid) & 0xffffffff)
-                rows = list(all_rows)
-                rng.shuffle(rows)
-                out.append(Retrieved([c for _i, c in rows[:K_KEEP_ALL]],
-                                      any_synth=False))
+                out.append(Retrieved(b2_all, any_synth=False))
                 continue
             if arm == "B3":
                 d = next((dm for dm in DOMAINS if dm in q.text), None)
