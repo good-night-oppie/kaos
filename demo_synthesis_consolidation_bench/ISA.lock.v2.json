@@ -1,0 +1,167 @@
+{
+  "$pre_registration": "Frozen acceptance/kill gates for synthesis-as-consolidation. Committed to git BEFORE any synthesis feature code exists. The sha256 of this file is recorded in the commit message and in docs/roadmap/v0.9-synthesis-evaluation.md. Any change to a gate, threshold, arm, or workload invariant AFTER results are seen is a goalpost move and invalidates the evaluation; such a change must be a new lock file with a new hash and a new pre-registration commit, never an edit to this one.",
+  "schema_version": 2,
+  "feature_under_test": "synthesis-as-consolidation (LLM-synthesized abstract `insight` memory from Hebbian-linked episodic clusters, retrieved via existing weighted ranking)",
+  "inspired_by_not_implementing": "arXiv:2604.27707 \u00e2\u20ac\u201d that paper prescribes weight-based consolidation, which KAOS deliberately does not do. This feature is better lookup, NOT weight-based generalization. The paper's compositional generalization ceiling is untouched and is out of scope for these gates.",
+  "preregistered_against_git_head": "efae7653083a23df3ac8053db76f4582eac478bb",
+  "preregistered_date": "2026-05-16",
+  "no_feature_code_invariant": "At the commit that introduces this file, no module named synthesis exists under kaos/dream/phases/ and no synthesis arm is implemented. Reviewers can verify via `git show <commit>:kaos/dream/phases/` not containing synthesis.py.",
+  "anti_self_deception_locks": {
+    "L_grader_blind": "All per-query correctness judgments run through kaos.metaharness.verifier.SurrogateVerifier, which by construction sees task + outputs but NOT which arm produced them and NOT the harness/feature source. The verifier is given a shuffled, arm-anonymized result stream.",
+    "L_separate_agents": "The workload-generating agent (writes episodic memory) and the query-generating agent (writes held-out questions) run in distinct KAOS sessions and import neither the synthesis module nor each other. The feature is not co-designed with the problem.",
+    "L_judge_audited": "The SurrogateVerifier / LLM-judge is spot-checked against human labels on a fixed 50-query sample (ids frozen in judge_audit_sample). If judge\u00e2\u20ac\u201chuman agreement < 0.85 Cohen's kappa, the entire run is VOID (not pass, not fail) and the judge must be fixed before re-running.",
+    "L_gate_first": "The harness must be built and demonstrated to be able to FAIL before any synthesis code is written. Concretely: run B0..B3 with the FULL arm stubbed to equal B0; the harness MUST emit [KILL: G1] (FULL cannot beat its own baseline). A harness in which the feature cannot lose is a broken harness and its later 'pass' is inadmissible."
+  },
+  "workload_invariants": {
+    "domain": "Simulated multi-month multi-agent incident-response operation (~40 KAOS agents, simulated quarter, fake distributed system).",
+    "episodic_memory_is_organic": "Memory rows (observation/result/error/insight) are written by agents doing the simulated work. The associations memory<->memory graph forms from genuine co-retrieval via the existing inline Hebbian hooks. Clusters are DISCOVERED, never hand-placed. A workload that pre-places cluster boundaries is non-conformant and VOIDs the run.",
+    "single_seeded_db_forked": "One seeded workload DB (random.Random(seed), seed frozen in `seed`) is forked N ways; the ONLY variable across arms is the memory layer.",
+    "distractor_clusters_present": "At least 20% of clusters are traps: plausible-looking, whose naive summary is wrong. Punishes summarize-everything.",
+    "temporal_contradiction_stream": "Later incidents invalidate earlier root causes; correct insights must encode the resolved state.",
+    "queries_per_class_min": 200,
+    "query_classes": {
+      "verbatim_recall": "Sanity floor. Answer is literally present in one episode.",
+      "compositional_multihop": "Answer requires combining a generalization from cluster A AND one from cluster B; lexically absent from EVERY episode and from any single cluster.",
+      "abstraction_only": "Asks for the generalization; each episode individually consistent with several conclusions; cue and trigger are semantically disconnected (low surface similarity).",
+      "tail_fact_probe": "Decisive answer is a single rare detail inside a cluster; tests that consolidation did not wash out the tail."
+    },
+    "held_out_shift_split": "A separate split with incident topics AND query templates unseen during ANY tuning of any arm. Topics+templates list frozen in shift_split_manifest and hashed."
+  },
+  "arms": {
+    "B0_no_synthesis": "Weighted retrieval over raw episodes. The honest control.",
+    "B1_nonllm_dedup": "Jaccard near-duplicate collapse of a memory cluster (reusing consolidation._jaccard) + concatenation. No LLM. Isolates 'it is just dedup'.",
+    "B2_keep_everything": "Full episodic history in context, position-randomized to neutralize lost-in-the-middle.",
+    "B3_cost_matched": "Identical LLM token budget to FULL, spent on query expansion at retrieval time, not on consolidation. Isolates 'gain is the free LLM call'.",
+    "L1_synth_never_retrieve": "Synthesis writes insights; insight rows excluded from the FTS index. Isolates 'stored artifact is causal vs synthesis-time pass'.",
+    "L2_random_insight": "Retrieve a synthesized insight from an UNRELATED cluster. Controls for 'any extra text helps'.",
+    "L3_answer_masked_synth": "Eval-answer spans masked from source memories before synthesis. Leakage control.",
+    "FULL": "synthesis-as-consolidation as designed."
+  },
+  "gates": [
+    {
+      "id": "G0",
+      "name": "sanity floor",
+      "predicate": "every arm achieves >= 0.95 answer accuracy on verbatim_recall",
+      "on_fail": "VOID (broken harness or broken workload; protects against false negatives). Not a feature pass and not a feature fail.",
+      "kill": false
+    },
+    {
+      "id": "G1",
+      "name": "beats cheap baselines",
+      "predicate": "FULL accuracy minus max(B0, B1, B3) accuracy on (compositional_multihop UNION abstraction_only) >= 0.10, with bootstrap 95% CI of the difference excluding 0, n >= 200 per class",
+      "on_fail": "feature REJECTED",
+      "kill": true
+    },
+    {
+      "id": "G2",
+      "name": "the stored artifact is causal",
+      "predicate": "synthesized insights appear in retrieved top-K for >= 0.60 of the queries they help, AND lesion L1 reproduces <= 0.20 of FULL's gain over B0",
+      "on_fail": "feature REJECTED (gain is the synthesis-time call, not the stored abstraction; reframe required, do not ship as 'synthesis-as-consolidation')",
+      "kill": true
+    },
+    {
+      "id": "G3",
+      "name": "not merely the free LLM call",
+      "predicate": "FULL accuracy minus B3 accuracy on the same compositional+abstraction split >= 0.07",
+      "on_fail": "feature REJECTED",
+      "kill": true
+    },
+    {
+      "id": "G4",
+      "name": "survives distribution shift",
+      "predicate": "on held_out_shift_split, retained_gain = (FULL-B0 on shift) / (FULL-B0 in-distribution) >= 0.70, AND (FULL - B0) is strictly > 0 on EVERY query class on the shift split",
+      "on_fail": "feature REJECTED",
+      "kill": true
+    },
+    {
+      "id": "G5",
+      "name": "no leakage, no tail washout",
+      "predicate": "L3 (answer-masked synthesizer) retains >= 0.80 of FULL's gain over B0, AND tail_fact_probe accuracy for FULL is no more than 0.03 below B0",
+      "on_fail": "feature REJECTED",
+      "kill": true
+    }
+  ],
+  "verdict_rule": "Run is VOID if G0 fails or L_judge_audited fails. Otherwise the feature is ACCEPTED only if ALL of G1, G2, G3, G4, G5 pass. Failing any single kill gate REJECTS the feature outright. There is no retune-and-rerun: a rejected feature requires a new design, a new lock file, and a new pre-registration commit. The benchmark harness exits non-zero and prints [KILL: <gate id>] or [VOID: <reason>] accordingly; that exit code is the binding verdict.",
+  "expected_base_rate_disclosure": "Per MemoryBench (arXiv:2510.17281) no advanced memory system reliably beats plain all-context RAG, and CTIM-Rover (arXiv:2505.23422) found distilled insights degraded agents by ~11 points. The prior probability that this feature passes all five kill gates is low. Rejection is the expected outcome and is a SUCCESSFUL evaluation, not a failed one.",
+  "frozen_manifests": {
+    "seed": 20260516,
+    "world": {
+      "days": 90,
+      "incidents_per_day": 6,
+      "incidents": 540,
+      "memories": 1620
+    },
+    "per_class": 220,
+    "judge_audit_sample": [
+      "abs-in_dist-0",
+      "abs-in_dist-1",
+      "abs-in_dist-10",
+      "abs-in_dist-100",
+      "abs-in_dist-101",
+      "abs-in_dist-102",
+      "abs-in_dist-103",
+      "abs-in_dist-104",
+      "abs-in_dist-105",
+      "abs-in_dist-106",
+      "abs-in_dist-107",
+      "abs-in_dist-108",
+      "abs-in_dist-109",
+      "abs-in_dist-11",
+      "abs-in_dist-110",
+      "abs-in_dist-111",
+      "abs-in_dist-112",
+      "abs-in_dist-113",
+      "abs-in_dist-114",
+      "abs-in_dist-115",
+      "abs-in_dist-116",
+      "abs-in_dist-117",
+      "abs-in_dist-118",
+      "abs-in_dist-119",
+      "abs-in_dist-12",
+      "abs-in_dist-120",
+      "abs-in_dist-121",
+      "abs-in_dist-122",
+      "abs-in_dist-123",
+      "abs-in_dist-124",
+      "abs-in_dist-125",
+      "abs-in_dist-126",
+      "abs-in_dist-127",
+      "abs-in_dist-128",
+      "abs-in_dist-129",
+      "abs-in_dist-13",
+      "abs-in_dist-130",
+      "abs-in_dist-131",
+      "abs-in_dist-132",
+      "abs-in_dist-133",
+      "abs-in_dist-134",
+      "abs-in_dist-135",
+      "abs-in_dist-136",
+      "abs-in_dist-137",
+      "abs-in_dist-138",
+      "abs-in_dist-139",
+      "abs-in_dist-14",
+      "abs-in_dist-140",
+      "abs-in_dist-141",
+      "abs-in_dist-142"
+    ],
+    "shift_split_manifest": {
+      "domains": [
+        "infra"
+      ],
+      "templates": {
+        "abstraction_only": "across {d}, identify the recurring upstream trigger of a chain outage",
+        "compositional_multihop": "name the common upstream condition behind chain outages spanning {a} plus {b}",
+        "verbatim_recall": "recall the applied fix recorded for incident {iid}",
+        "tail_fact_probe": "state the odd port marker logged for incident {iid}"
+      },
+      "note": "topic (infra) AND template wording held out vs in_dist"
+    },
+    "note": "v2: manifests FILLED. Gate thresholds, arms, verdict_rule, workload_invariants remain FINAL and byte-identical to v1. No other field changed. Committed before any FULL/synthesis run."
+  },
+  "supersedes": {
+    "lock": "ISA.lock.json",
+    "sha256": "2e28dc7660f574ff625caf92e8fde9387719bd8fe813ef46b8d0bc4ad47e8f24",
+    "reason": "fill the two TO-BE-FILLED manifests ONLY; gates/arms/verdict_rule/workload_invariants byte-identical"
+  },
+  "preregistered_against_git_head_v2": "FILLED_AT_COMMIT"
+}

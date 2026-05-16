@@ -20,13 +20,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-LOCK_PATH = Path(__file__).parent / "ISA.lock.json"
-# Pre-registered hash of ISA.lock.json (v1). The harness refuses to run if
-# the on-disk lock does not match a known pre-registered hash — this is the
-# tamper-evidence check. v2 (manifests filled) is added here only AFTER its
-# own pre-registration commit exists.
+_V2 = Path(__file__).parent / "ISA.lock.v2.json"
+_V1 = Path(__file__).parent / "ISA.lock.json"
+# v2 (manifests filled) supersedes v1 once its own pre-registration commit
+# exists. The binding run uses v2; v1 stays for the audit trail.
+LOCK_PATH = _V2 if _V2.exists() else _V1
+# Pre-registered hashes. The harness refuses to run if the on-disk lock is
+# not one of these — tamper-evidence. Each hash corresponds to a real
+# pre-registration commit; goalpost moves are impossible without a new
+# entry here AND a new commit.
 KNOWN_LOCK_SHA256 = {
     "2e28dc7660f574ff625caf92e8fde9387719bd8fe813ef46b8d0bc4ad47e8f24": "v1",
+    "09310794aad969646804ea56e1d05489c24480c57c1970b70b344ec61ef7e684": "v2-manifests-filled",
 }
 
 
