@@ -24,7 +24,11 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 DEFAULT_MIN_CLUSTER = 4
-DEFAULT_EDGE_WEIGHT = 0.0   # any positive Hebbian edge counts
+# Require co-retrieval to RECUR before two memories are deemed clustered.
+# A one-off incidental co-hit (weight ~1) is noise; weight > 2 means the
+# pair surfaced together across multiple independent agent sessions. This
+# is a fixed, principled design choice — NOT swept against any gate.
+DEFAULT_EDGE_WEIGHT = 2.0
 
 
 @dataclass

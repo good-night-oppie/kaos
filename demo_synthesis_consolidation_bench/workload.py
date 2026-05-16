@@ -20,7 +20,18 @@ os.environ.setdefault("KAOS_DREAM_THRESHOLD", "100000000")  # no auto-dream
 from kaos import Kaos
 from kaos.memory import MemoryStore
 
+import re as _re
+
 from world import Incident, generate_world
+
+_FTS = _re.compile(r"[^\w\s]+")
+
+
+def _fts_or(text: str) -> str:
+    """OR-join sanitized tokens — robust against FTS5 hyphen/phrase
+    pitfalls (same fix used in demo_realistic_retrieval_bench)."""
+    toks = [t for t in _FTS.sub(" ", text).lower().split() if len(t) > 2]
+    return " OR ".join(toks) if toks else text
 
 
 @dataclass
@@ -48,11 +59,14 @@ def build_workload(db_path: str, seed: int, *, days: int = 90,
     try:
         for inc in incidents:
             agent = kaos.spawn(f"ir-{inc.iid}")
-            # GENUINE co-retrieval: look for prior similar incidents first.
-            # record_hits=True drives the inline Hebbian association hook.
-            probe = f"{inc.service} {inc.domain}"
+            # GENUINE co-retrieval: the agent looks for prior similar
+            # incidents using vocabulary that actually appears in episode
+            # text (service + symptom). Same-service / same-symptom
+            # incidents co-retrieve -> clusters EMERGE from retrieval
+            # dynamics, not from any hand-placed boundary.
+            probe = _fts_or(f"{inc.service} {inc.symptom}")
             try:
-                mem.search(probe, limit=6, rank="weighted",
+                mem.search(probe, limit=8, rank="weighted",
                            record_hits=True, requesting_agent_id=agent)
             except Exception:
                 pass
@@ -71,6 +85,14 @@ def build_workload(db_path: str, seed: int, *, days: int = 90,
             idx.mem_text[r] = inc.result_text + f" detail {inc.tail_detail}"
             if not inc.is_distractor:
                 idx.domain_incs.setdefault(inc.domain, []).append(inc.iid)
+            # KAOS's REAL offline Hebbian rebuild (what threshold-triggered
+            # consolidation / `kaos dream` does). Associations are a
+            # sleep-phase artifact by design, not an inline one.
+            from kaos.dream.auto import rebuild_associations_for_agent
+            try:
+                rebuild_associations_for_agent(kaos.conn, agent)
+            except Exception:
+                pass
     finally:
         kaos.close()
     return idx

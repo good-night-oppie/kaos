@@ -68,6 +68,7 @@ class Incident:
     is_distractor: bool
     # The memory texts an agent will write for this incident. Each carries
     # only a SUBSET of rule tokens (never the full set).
+    symptom: str
     obs_text: str
     err_text: str
     result_text: str
@@ -124,7 +125,7 @@ def generate_world(seed: int, days: int = 90,
                    f"local fix applied; residual {leaked[-1]}")
             out.append(Incident(
                 iid=iid, day=day, domain=domain, service=service,
-                is_distractor=is_distractor,
+                is_distractor=is_distractor, symptom=sym,
                 obs_text=obs, err_text=err, result_text=res,
                 tail_detail=tail,
                 rule_tokens_present=leaked,
