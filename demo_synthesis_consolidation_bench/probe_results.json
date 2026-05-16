@@ -1,0 +1,14 @@
+{
+  "acc": {
+    "B0": 0.0,
+    "B1": 0.0,
+    "EXT": 0.0,
+    "FULL": 0.0
+  },
+  "P1": true,
+  "P2": false,
+  "P3": false,
+  "p2_margin": 0.0,
+  "p3_margin": 0.0,
+  "verdict": "DO NOT BUILD: P2,P3 failed. Faithful, final, no retune-and-rerun."
+}
