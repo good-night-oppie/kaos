@@ -91,6 +91,101 @@ def _fingerprint(texts: list[str]) -> str:
     return "synth:" + h.hexdigest()[:20]
 
 
+_GENERIC = {
+    "incident", "day", "the", "and", "for", "with", "signal", "noise",
+    "error", "context", "observed", "remediated", "restarting", "local",
+    "fix", "applied", "residual", "detail", "by",
+}
+
+
+def extractive_consolidate(
+    conn: sqlite3.Connection,
+    *,
+    min_cluster: int = DEFAULT_MIN_CLUSTER,
+    min_edge_weight: float = DEFAULT_EDGE_WEIGHT,
+    recur_frac: float = 0.20,
+    corpus_df_cap_frac: float = 0.50,
+    index_insights: bool = True,
+) -> SynthesisReport:
+    """Non-LLM extractive keyphrase-union consolidation.
+
+    Per cluster, keep tokens that RECUR across cluster members
+    (cluster-df / size >= recur_frac) but are NOT corpus-generic
+    (global-df / corpus-size <= corpus_df_cap_frac and not in a small
+    stoplist). Write the verbatim token union as one `insight` memory.
+
+    Provably retrieval-faithful: every emitted token is a verbatim
+    lowercased substring of some cluster source (it was copied from one).
+    No LLM, no embeddings, deterministic, dream-cycle-batched.
+    """
+    import re as _re
+    rep = SynthesisReport()
+    comps = _components(conn, min_edge_weight)
+    rep.clusters_found = sum(1 for c in comps if len(c) >= min_cluster)
+
+    corpus_n = conn.execute("SELECT COUNT(*) FROM memory").fetchone()[0] or 1
+    tok_re = _re.compile(r"[a-z0-9]+")
+
+    # global document frequency
+    gdf: dict[str, int] = {}
+    for (content,) in conn.execute("SELECT content FROM memory"):
+        for t in set(tok_re.findall((content or "").lower())):
+            gdf[t] = gdf.get(t, 0) + 1
+
+    from kaos.memory import MemoryStore
+    mem = MemoryStore(conn)
+    df_cap = corpus_df_cap_frac * corpus_n
+
+    for comp in comps:
+        if len(comp) < min_cluster:
+            continue
+        qs = ",".join("?" * len(comp))
+        rows = conn.execute(
+            f"SELECT memory_id, content FROM memory "
+            f"WHERE memory_id IN ({qs})", comp).fetchall()
+        member_tok_sets = []
+        for _mid, content in rows:
+            member_tok_sets.append(set(tok_re.findall((content or "").lower())))
+        size = len(member_tok_sets) or 1
+        cdf: dict[str, int] = {}
+        for s in member_tok_sets:
+            for t in s:
+                cdf[t] = cdf.get(t, 0) + 1
+        spine = sorted(
+            t for t, c in cdf.items()
+            if (c / size) >= recur_frac
+            and gdf.get(t, 0) <= df_cap
+            and t not in _GENERIC
+            and len(t) > 2
+        )
+        if not spine:
+            continue
+        insight = " ".join(spine)
+        owner = conn.execute(
+            "SELECT agent_id FROM memory WHERE memory_id = ? LIMIT 1",
+            (comp[0],)).fetchone()
+        agent_id = owner[0] if owner else "consolidation"
+        mid = mem.write(agent_id=agent_id, content=insight,
+                        type="insight", key=f"ext:{comp[0]}")
+        rep.insights_written += 1
+        rep.insight_memory_ids.append(mid)
+        if index_insights:
+            now = "strftime('%Y-%m-%dT%H:%M:%f','now')"
+            for src in comp:
+                try:
+                    conn.execute(
+                        f"INSERT INTO associations (kind_a,id_a,kind_b,id_b,"
+                        f"weight,uses,first_seen,last_seen) VALUES "
+                        f"('memory',?,'memory',?,3.0,1,{now},{now}) "
+                        f"ON CONFLICT(kind_a,id_a,kind_b,id_b) DO UPDATE SET "
+                        f"weight=weight+1.0,last_seen={now}",
+                        (mid, src))
+                except sqlite3.OperationalError:
+                    pass
+        conn.commit()
+    return rep
+
+
 def run(
     conn: sqlite3.Connection,
     *,

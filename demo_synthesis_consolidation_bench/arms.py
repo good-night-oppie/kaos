@@ -205,8 +205,8 @@ def retrieve_all(arm: str, db_path: str,
                     texts = kept
                 out.append(Retrieved(texts, any_synth=False))
                 continue
-            # FULL / L1 / L2 / L3
-            inc_ins = arm in ("FULL", "L2", "L3")
+            # FULL / L1 / L2 / L3 / EXT
+            inc_ins = arm in ("FULL", "L2", "L3", "EXT")
             r = _search(conn, q.text, limit=K_RAW, include_insight=inc_ins)
             texts = [t for _i, _ty, t in r]
             any_s = any(ty == "insight" for _i, ty, _t in r)
