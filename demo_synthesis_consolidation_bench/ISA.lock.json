@@ -1,0 +1,99 @@
+{
+  "$pre_registration": "Frozen acceptance/kill gates for synthesis-as-consolidation. Committed to git BEFORE any synthesis feature code exists. The sha256 of this file is recorded in the commit message and in docs/roadmap/v0.9-synthesis-evaluation.md. Any change to a gate, threshold, arm, or workload invariant AFTER results are seen is a goalpost move and invalidates the evaluation; such a change must be a new lock file with a new hash and a new pre-registration commit, never an edit to this one.",
+  "schema_version": 1,
+  "feature_under_test": "synthesis-as-consolidation (LLM-synthesized abstract `insight` memory from Hebbian-linked episodic clusters, retrieved via existing weighted ranking)",
+  "inspired_by_not_implementing": "arXiv:2604.27707 — that paper prescribes weight-based consolidation, which KAOS deliberately does not do. This feature is better lookup, NOT weight-based generalization. The paper's compositional generalization ceiling is untouched and is out of scope for these gates.",
+  "preregistered_against_git_head": "efae7653083a23df3ac8053db76f4582eac478bb",
+  "preregistered_date": "2026-05-16",
+  "no_feature_code_invariant": "At the commit that introduces this file, no module named synthesis exists under kaos/dream/phases/ and no synthesis arm is implemented. Reviewers can verify via `git show <commit>:kaos/dream/phases/` not containing synthesis.py.",
+
+  "anti_self_deception_locks": {
+    "L_grader_blind": "All per-query correctness judgments run through kaos.metaharness.verifier.SurrogateVerifier, which by construction sees task + outputs but NOT which arm produced them and NOT the harness/feature source. The verifier is given a shuffled, arm-anonymized result stream.",
+    "L_separate_agents": "The workload-generating agent (writes episodic memory) and the query-generating agent (writes held-out questions) run in distinct KAOS sessions and import neither the synthesis module nor each other. The feature is not co-designed with the problem.",
+    "L_judge_audited": "The SurrogateVerifier / LLM-judge is spot-checked against human labels on a fixed 50-query sample (ids frozen in judge_audit_sample). If judge–human agreement < 0.85 Cohen's kappa, the entire run is VOID (not pass, not fail) and the judge must be fixed before re-running.",
+    "L_gate_first": "The harness must be built and demonstrated to be able to FAIL before any synthesis code is written. Concretely: run B0..B3 with the FULL arm stubbed to equal B0; the harness MUST emit [KILL: G1] (FULL cannot beat its own baseline). A harness in which the feature cannot lose is a broken harness and its later 'pass' is inadmissible."
+  },
+
+  "workload_invariants": {
+    "domain": "Simulated multi-month multi-agent incident-response operation (~40 KAOS agents, simulated quarter, fake distributed system).",
+    "episodic_memory_is_organic": "Memory rows (observation/result/error/insight) are written by agents doing the simulated work. The associations memory<->memory graph forms from genuine co-retrieval via the existing inline Hebbian hooks. Clusters are DISCOVERED, never hand-placed. A workload that pre-places cluster boundaries is non-conformant and VOIDs the run.",
+    "single_seeded_db_forked": "One seeded workload DB (random.Random(seed), seed frozen in `seed`) is forked N ways; the ONLY variable across arms is the memory layer.",
+    "distractor_clusters_present": "At least 20% of clusters are traps: plausible-looking, whose naive summary is wrong. Punishes summarize-everything.",
+    "temporal_contradiction_stream": "Later incidents invalidate earlier root causes; correct insights must encode the resolved state.",
+    "queries_per_class_min": 200,
+    "query_classes": {
+      "verbatim_recall": "Sanity floor. Answer is literally present in one episode.",
+      "compositional_multihop": "Answer requires combining a generalization from cluster A AND one from cluster B; lexically absent from EVERY episode and from any single cluster.",
+      "abstraction_only": "Asks for the generalization; each episode individually consistent with several conclusions; cue and trigger are semantically disconnected (low surface similarity).",
+      "tail_fact_probe": "Decisive answer is a single rare detail inside a cluster; tests that consolidation did not wash out the tail."
+    },
+    "held_out_shift_split": "A separate split with incident topics AND query templates unseen during ANY tuning of any arm. Topics+templates list frozen in shift_split_manifest and hashed."
+  },
+
+  "arms": {
+    "B0_no_synthesis": "Weighted retrieval over raw episodes. The honest control.",
+    "B1_nonllm_dedup": "Jaccard near-duplicate collapse of a memory cluster (reusing consolidation._jaccard) + concatenation. No LLM. Isolates 'it is just dedup'.",
+    "B2_keep_everything": "Full episodic history in context, position-randomized to neutralize lost-in-the-middle.",
+    "B3_cost_matched": "Identical LLM token budget to FULL, spent on query expansion at retrieval time, not on consolidation. Isolates 'gain is the free LLM call'.",
+    "L1_synth_never_retrieve": "Synthesis writes insights; insight rows excluded from the FTS index. Isolates 'stored artifact is causal vs synthesis-time pass'.",
+    "L2_random_insight": "Retrieve a synthesized insight from an UNRELATED cluster. Controls for 'any extra text helps'.",
+    "L3_answer_masked_synth": "Eval-answer spans masked from source memories before synthesis. Leakage control.",
+    "FULL": "synthesis-as-consolidation as designed."
+  },
+
+  "gates": [
+    {
+      "id": "G0",
+      "name": "sanity floor",
+      "predicate": "every arm achieves >= 0.95 answer accuracy on verbatim_recall",
+      "on_fail": "VOID (broken harness or broken workload; protects against false negatives). Not a feature pass and not a feature fail.",
+      "kill": false
+    },
+    {
+      "id": "G1",
+      "name": "beats cheap baselines",
+      "predicate": "FULL accuracy minus max(B0, B1, B3) accuracy on (compositional_multihop UNION abstraction_only) >= 0.10, with bootstrap 95% CI of the difference excluding 0, n >= 200 per class",
+      "on_fail": "feature REJECTED",
+      "kill": true
+    },
+    {
+      "id": "G2",
+      "name": "the stored artifact is causal",
+      "predicate": "synthesized insights appear in retrieved top-K for >= 0.60 of the queries they help, AND lesion L1 reproduces <= 0.20 of FULL's gain over B0",
+      "on_fail": "feature REJECTED (gain is the synthesis-time call, not the stored abstraction; reframe required, do not ship as 'synthesis-as-consolidation')",
+      "kill": true
+    },
+    {
+      "id": "G3",
+      "name": "not merely the free LLM call",
+      "predicate": "FULL accuracy minus B3 accuracy on the same compositional+abstraction split >= 0.07",
+      "on_fail": "feature REJECTED",
+      "kill": true
+    },
+    {
+      "id": "G4",
+      "name": "survives distribution shift",
+      "predicate": "on held_out_shift_split, retained_gain = (FULL-B0 on shift) / (FULL-B0 in-distribution) >= 0.70, AND (FULL - B0) is strictly > 0 on EVERY query class on the shift split",
+      "on_fail": "feature REJECTED",
+      "kill": true
+    },
+    {
+      "id": "G5",
+      "name": "no leakage, no tail washout",
+      "predicate": "L3 (answer-masked synthesizer) retains >= 0.80 of FULL's gain over B0, AND tail_fact_probe accuracy for FULL is no more than 0.03 below B0",
+      "on_fail": "feature REJECTED",
+      "kill": true
+    }
+  ],
+
+  "verdict_rule": "Run is VOID if G0 fails or L_judge_audited fails. Otherwise the feature is ACCEPTED only if ALL of G1, G2, G3, G4, G5 pass. Failing any single kill gate REJECTS the feature outright. There is no retune-and-rerun: a rejected feature requires a new design, a new lock file, and a new pre-registration commit. The benchmark harness exits non-zero and prints [KILL: <gate id>] or [VOID: <reason>] accordingly; that exit code is the binding verdict.",
+
+  "expected_base_rate_disclosure": "Per MemoryBench (arXiv:2510.17281) no advanced memory system reliably beats plain all-context RAG, and CTIM-Rover (arXiv:2505.23422) found distilled insights degraded agents by ~11 points. The prior probability that this feature passes all five kill gates is low. Rejection is the expected outcome and is a SUCCESSFUL evaluation, not a failed one.",
+
+  "frozen_manifests": {
+    "seed": 20260516,
+    "judge_audit_sample": "TO BE FILLED with 50 frozen query ids when the query generator is built; once filled, this lock is superseded by ISA.lock.v2.json with a new hash and a new pre-registration commit. Until then no FULL-arm result may be reported.",
+    "shift_split_manifest": "TO BE FILLED likewise.",
+    "note": "The gate thresholds, arms, verdict_rule, and workload_invariants above are FINAL at this hash. Only the two TO BE FILLED manifests may be populated, and only via a superseding v2 lock committed before the first FULL run."
+  }
+}
