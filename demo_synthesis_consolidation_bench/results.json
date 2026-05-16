@@ -1,0 +1,100 @@
+{
+  "lock_sha256": "09310794aad969646804ea56e1d05489c24480c57c1970b70b344ec61ef7e684",
+  "seed": 20260516,
+  "judge_kappa": 1.0,
+  "verdict": "VOID: G0 sanity floor failed",
+  "arms": {
+    "B0": {
+      "hard_in_dist": 0.0,
+      "hard_shift": 0.0,
+      "verbatim": 0.740909090909091,
+      "tail": 0.740909090909091
+    },
+    "B1": {
+      "hard_in_dist": 0.0,
+      "hard_shift": 0.0,
+      "verbatim": 0.740909090909091,
+      "tail": 0.740909090909091
+    },
+    "B2": {
+      "hard_in_dist": 0.0,
+      "hard_shift": 0.0,
+      "verbatim": 0.01818181818181818,
+      "tail": 0.02727272727272727
+    },
+    "B3": {
+      "hard_in_dist": 0.0,
+      "hard_shift": 0.0,
+      "verbatim": 0.740909090909091,
+      "tail": 0.740909090909091
+    },
+    "L1": {
+      "hard_in_dist": 0.0,
+      "hard_shift": 0.0,
+      "verbatim": 0.740909090909091,
+      "tail": 0.740909090909091
+    },
+    "L2": {
+      "hard_in_dist": 0.0,
+      "hard_shift": 0.0,
+      "verbatim": 0.740909090909091,
+      "tail": 0.740909090909091
+    },
+    "L3": {
+      "hard_in_dist": 0.0,
+      "hard_shift": 0.0,
+      "verbatim": 0.740909090909091,
+      "tail": 0.740909090909091
+    },
+    "FULL": {
+      "hard_in_dist": 0.0,
+      "hard_shift": 0.0,
+      "verbatim": 0.740909090909091,
+      "tail": 0.740909090909091
+    }
+  },
+  "gates": [
+    {
+      "gate": "G0",
+      "name": "sanity floor",
+      "passed": false,
+      "kill": false,
+      "detail": "verbatim_recall acc per arm: B0=0.741, B1=0.741, B2=0.018, B3=0.741, L1=0.741, L2=0.741, L3=0.741, FULL=0.741 (need >=0.95 all)"
+    },
+    {
+      "gate": "G1",
+      "name": "beats cheap baselines",
+      "passed": false,
+      "kill": true,
+      "detail": "FULL=0.000 vs max(B0,B1,B3)=0.000 diff=+0.000 (need >=+0.10), bootstrap95 CI=(+0.000,+0.000) (need lo>0), n_hard=440 (need >= 200/class)"
+    },
+    {
+      "gate": "G2",
+      "name": "stored artifact is causal",
+      "passed": false,
+      "kill": true,
+      "detail": "synth-in-topK on helped queries=0.000 (need >=0.60); L1 reproduces 1.000 of FULL gain (need <=0.20)"
+    },
+    {
+      "gate": "G3",
+      "name": "not merely the free call",
+      "passed": false,
+      "kill": true,
+      "detail": "FULL-B3 on hard=+0.000 (need >=+0.07)"
+    },
+    {
+      "gate": "G4",
+      "name": "survives distribution shift",
+      "passed": false,
+      "kill": true,
+      "detail": "retained gain on shift=0.000 (need >=0.70); FULL-B0 strictly>0 on every hard class on shift: False"
+    },
+    {
+      "gate": "G5",
+      "name": "no leakage / no tail washout",
+      "passed": false,
+      "kill": true,
+      "detail": "answer-masked L3 retains 0.000 of gain (need >=0.80); tail probe FULL=0.741 vs B0=0.741 regression=+0.000 (need <=0.03)"
+    }
+  ]
+}
