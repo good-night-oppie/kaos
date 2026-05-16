@@ -44,7 +44,12 @@ def _search(conn, query_text: str, *, limit: int,
         raw = query_text.lower().replace("?", " ").replace("-", " ").split()
         toks = [t for t in raw if len(t) > 2 and t not in _STOP][:12]
         q = " OR ".join(toks) if toks else query_text
-        res = mem.search(q, limit=limit * 3, rank="weighted")
+        # Neutral retrieval substrate for ALL arms. KAOS plasticity-
+        # weighted ranking is a SEPARATE feature, not under test here, and
+        # it demotes one-off records below frequently-co-retrieved ones —
+        # a confound for both the sanity floor and the hard-query
+        # comparison. bm25 is the fair, uniform substrate.
+        res = mem.search(q, limit=limit * 3, rank="bm25")
     except Exception:
         res = []
     out = []

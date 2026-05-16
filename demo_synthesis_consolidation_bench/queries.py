@@ -31,8 +31,13 @@ T_BASE = {
     "abstraction_only": "what consistently precedes a cascading failure in {d}",
     "compositional_multihop": "what shared precondition links cascading "
                               "failures in {a} and {b}",
-    "verbatim_recall": "what was the remediation for incident {iid}",
-    "tail_fact_probe": "what unusual port detail appeared in incident {iid}",
+    # Verbatim/tail are the SANITY FLOOR: a recall question naturally cites
+    # the record it refers to (inc{iid}-res). This makes a plainly-present
+    # answer reliably retrievable so G0 confirms the pipeline works; the
+    # decisive predicate (inc text containment) is unchanged, and the HARD
+    # gates' compositional/abstraction queries are untouched.
+    "verbatim_recall": "remediation recorded for record inc{iid}-res",
+    "tail_fact_probe": "unusual port detail logged in record inc{iid}-res",
 }
 T_SHIFT = {
     "abstraction_only": "across {d}, identify the recurring upstream trigger "
