@@ -85,6 +85,106 @@ def setup(output: str):
     run_setup(output_path=output)
 
 
+@cli.group("doctor")
+def doctor_group():
+    """Smoke-test infrastructure (providers, proposer, etc.)."""
+
+
+@doctor_group.command("proposer")
+@click.option("--config-file", default=DEFAULT_CONFIG,
+              help="Config file path")
+@click.option("--wall-timeout", default=30.0, type=float,
+              help="Hard wall timeout per provider (seconds)")
+@click.option("--idle-timeout", default=10.0, type=float,
+              help="Idle (no-new-bytes) timeout per provider (seconds)")
+@click.pass_context
+def doctor_proposer(ctx, config_file: str, wall_timeout: float,
+                    idle_timeout: float):
+    """Send a tiny prompt to every configured provider and report
+    latency + stream health. Catches the P0 #11 failure mode early.
+
+    Exits non-zero if ANY provider fails to respond within the bounds.
+    """
+    import asyncio
+    import time as _time
+    from kaos.router.providers import ProposerStalled
+
+    if not Path(config_file).exists():
+        msg = f"Config not found: {config_file}"
+        if _json_err(ctx, msg):
+            return
+        console.print(f"[red]{msg}[/red]")
+        ctx.exit(1)
+        return
+
+    from kaos.router.gepa import GEPARouter
+    router = GEPARouter.from_config(config_file)
+
+    async def _smoke_one(name: str):
+        client = router.clients.get(name)
+        if client is None:
+            return {"model": name, "status": "no-client", "ms": None,
+                    "detail": "no LLMProvider/VLLMClient resolved"}
+        # Override provider-level timeouts where supported so the smoke
+        # check fails fast rather than inheriting the production wall.
+        for attr, val in (("timeout", wall_timeout),
+                          ("idle_timeout", idle_timeout)):
+            if hasattr(client, attr):
+                try:
+                    setattr(client, attr, val)
+                except Exception:
+                    pass
+        prompt = "Reply with the single word: OK"
+        msgs = [{"role": "user", "content": prompt}]
+        model_id = router.models[name].model_id or name
+        t0 = _time.perf_counter()
+        try:
+            r = await client.chat(model=model_id, messages=msgs,
+                                  temperature=0.0, max_tokens=8)
+            ms = (_time.perf_counter() - t0) * 1000
+            text = ""
+            try:
+                text = (r.choices[0].message.content or "").strip()
+            except Exception:
+                pass
+            return {"model": name, "status": "ok", "ms": round(ms, 1),
+                    "detail": text[:60]}
+        except ProposerStalled as e:
+            ms = (_time.perf_counter() - t0) * 1000
+            return {"model": name, "status": "stalled",
+                    "ms": round(ms, 1), "detail": str(e)}
+        except TimeoutError as e:
+            ms = (_time.perf_counter() - t0) * 1000
+            return {"model": name, "status": "wall-timeout",
+                    "ms": round(ms, 1), "detail": str(e)}
+        except Exception as e:
+            ms = (_time.perf_counter() - t0) * 1000
+            return {"model": name, "status": "error",
+                    "ms": round(ms, 1), "detail": f"{type(e).__name__}: {e}"}
+
+    async def _smoke_all():
+        return await asyncio.gather(*[_smoke_one(n) for n in router.models])
+
+    rows = asyncio.run(_smoke_all())
+    bad = [r for r in rows if r["status"] != "ok"]
+
+    if _json_out(ctx, {"results": rows,
+                       "failed": [r["model"] for r in bad]}):
+        return
+
+    console.print(f"[bold]Proposer smoke — {len(rows)} provider(s)[/bold] "
+                  f"(wall={wall_timeout}s, idle={idle_timeout}s)")
+    for r in rows:
+        c = {"ok": "green", "stalled": "yellow",
+             "wall-timeout": "red", "error": "red",
+             "no-client": "yellow"}.get(r["status"], "white")
+        ms = f"{r['ms']:.1f} ms" if r["ms"] is not None else "—"
+        console.print(f"  [{c}]{r['status']:13}[/{c}] {r['model']:24} "
+                      f"{ms:>10}   [dim]{r['detail']}[/dim]")
+    if bad:
+        ctx.exit(1)
+
+
 @cli.command()
 @click.argument("task")
 @click.option("--name", "-n", required=True, help="Agent name")

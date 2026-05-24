@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 from kaos.metaharness.evaluator import HarnessEvaluator
 from kaos.metaharness.harness import HarnessCandidate, EvaluationResult, SearchConfig
 from kaos.metaharness.pareto import compute_pareto, ParetoFrontier
+from kaos.router.providers import ProposerStalled
 from kaos.metaharness.prompts import build_pivot_prompt, build_reflect_prompt
 from kaos.metaharness.proposer import ProposerAgent
 
@@ -130,6 +131,15 @@ class MetaHarnessSearch:
                     ),
                     timeout=self.config.proposer_timeout_seconds,
                 )
+            except ProposerStalled as e:
+                # Provider produced no new output for idle_timeout — the
+                # iteration is INCOMPLETE but the search SURVIVES (P0 #11).
+                logger.warning(
+                    "Iteration %d: proposer stalled: %s, marking incomplete and continuing",
+                    iteration, e,
+                )
+                self._store_iteration_error(iteration, "proposer_stalled")
+                continue
             except asyncio.TimeoutError:
                 logger.error(
                     "Iteration %d: proposer timed out after %ds, skipping",
@@ -355,6 +365,13 @@ class MetaHarnessSearch:
                     ),
                     timeout=self.config.proposer_timeout_seconds,
                 )
+            except ProposerStalled as e:
+                logger.warning(
+                    "Iteration %d: proposer stalled: %s, marking incomplete and continuing",
+                    iteration, e,
+                )
+                self._store_iteration_error(iteration, "proposer_stalled")
+                continue
             except (asyncio.TimeoutError, Exception) as e:
                 logger.error("Iteration %d: proposer failed: %s, skipping", iteration, e)
                 self._store_iteration_error(iteration, str(e))

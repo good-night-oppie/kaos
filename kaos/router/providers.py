@@ -71,6 +71,17 @@ class LLMResponse:
     usage: LLMUsage | None = None
 
 
+class ProposerStalled(Exception):
+    """A subprocess-based provider (e.g. Claude Code CLI) produced no new
+    output for ``idle_timeout`` seconds. The call is RECOVERABLE — the
+    meta-harness should mark the iteration ``incomplete`` and continue
+    to the next iteration rather than abort the search.
+
+    Distinct from ``TimeoutError`` (wall-clock exceeded — hard failure)
+    and ``RuntimeError`` (process exited non-zero — hard failure).
+    """
+
+
 # ── Abstract provider ────────────────────────────────────────────
 
 class LLMProvider(ABC):
@@ -350,9 +361,11 @@ class ClaudeCodeProvider(LLMProvider):
         "/opt/homebrew/bin/claude",
     ]
 
-    def __init__(self, model_id: str = "", timeout: float = 300.0):
+    def __init__(self, model_id: str = "", timeout: float = 300.0,
+                 idle_timeout: float = 60.0):
         self.model_id = model_id
-        self.timeout = timeout
+        self.timeout = timeout              # wall (hard kill)
+        self.idle_timeout = idle_timeout    # no new bytes => ProposerStalled
         # Resolve claude executable at init time
         self._claude_exe = self._find_claude()
 
@@ -558,9 +571,6 @@ class ClaudeCodeProvider(LLMProvider):
         tools: list[dict] | None = None,
         tool_choice: str | None = None,
     ) -> LLMResponse:
-        import subprocess
-        import time as _time
-
         prompt = self._serialize_conversation(messages, tools)
         prompt_bytes = prompt.encode("utf-8")
 
@@ -571,38 +581,14 @@ class ClaudeCodeProvider(LLMProvider):
 
         # Strip CLAUDECODE so nested claude --print doesn't refuse to start.
         env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
-        timeout = self.timeout
 
-        def _run_sync() -> subprocess.CompletedProcess:
-            return subprocess.run(
-                cmd,
-                input=prompt_bytes,
-                capture_output=True,
-                env=env,
-                timeout=timeout,
-            )
-
-        loop = asyncio.get_running_loop()
-
-        # Retry with backoff on empty responses (rate limiting)
+        # Retry with backoff on empty responses (rate limiting). Stalls and
+        # wall timeouts propagate immediately — those are not rate-limit cases.
         max_retries = 3
         for attempt in range(max_retries):
-            try:
-                proc_result = await loop.run_in_executor(None, _run_sync)
-            except subprocess.TimeoutExpired:
-                raise TimeoutError(f"claude subprocess timed out after {timeout}s")
-
-            if proc_result.returncode != 0:
-                err = proc_result.stderr.decode("utf-8", errors="replace").strip()
-                raise RuntimeError(f"claude --print failed (rc={proc_result.returncode}): {err}")
-
-            stdout_text = proc_result.stdout.decode("utf-8", errors="replace")
-            stderr_text = proc_result.stderr.decode("utf-8", errors="replace").strip()
-
+            stdout_text = await self._run_streaming_once(cmd, prompt_bytes, env)
             if stdout_text.strip():
                 return self._parse(stdout_text)
-
-            # Empty response — likely rate limited by active Claude Code session
             if attempt < max_retries - 1:
                 wait = 5 * (attempt + 1)
                 logger.warning(
@@ -618,9 +604,114 @@ class ClaudeCodeProvider(LLMProvider):
                     "the API quota. Either close the active session first, or use "
                     "provider: anthropic with an ANTHROPIC_API_KEY for independent quota."
                 )
-
-        # unreachable but keeps type checker happy
         raise RuntimeError("claude --print failed")
+
+    async def _run_streaming_once(
+        self, cmd: list[str], prompt_bytes: bytes, env: dict,
+    ) -> str:
+        """Single subprocess invocation with INCREMENTAL stdout reads
+        gated by an idle-timeout and a wall-timeout.
+
+        - If no new bytes arrive within ``self.idle_timeout`` seconds and
+          the wall budget is still open → ``ProposerStalled`` (recoverable;
+          the meta-harness should mark this iteration ``incomplete`` and
+          continue).
+        - If ``self.timeout`` (wall) is exceeded → ``TimeoutError``
+          (hard failure — the call is unrecoverable for this iteration
+          regardless of upstream state).
+        - If the process exits non-zero → ``RuntimeError`` with stderr.
+        - Otherwise returns the accumulated stdout text.
+
+        This replaces the prior blocking ``subprocess.run(..., timeout=N)``
+        which gave no early stall signal — closes P0 issue #11.
+        """
+        loop = asyncio.get_running_loop()
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
+        )
+        # Send prompt and close stdin so the CLI knows input is complete.
+        try:
+            if proc.stdin is not None:
+                proc.stdin.write(prompt_bytes)
+                await proc.stdin.drain()
+                proc.stdin.close()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+        stdout_chunks: list[bytes] = []
+        stderr_chunks: list[bytes] = []
+        wall_deadline = loop.time() + self.timeout
+
+        async def _drain_stderr():
+            assert proc.stderr is not None
+            while True:
+                try:
+                    c = await proc.stderr.read(8192)
+                except Exception:
+                    return
+                if not c:
+                    return
+                stderr_chunks.append(c)
+
+        stderr_task = asyncio.create_task(_drain_stderr())
+
+        try:
+            assert proc.stdout is not None
+            while True:
+                remaining_wall = wall_deadline - loop.time()
+                if remaining_wall <= 0:
+                    raise TimeoutError(
+                        f"claude wall timeout after {self.timeout}s "
+                        f"(received {sum(len(c) for c in stdout_chunks)} bytes)"
+                    )
+                read_to = min(self.idle_timeout, remaining_wall)
+                try:
+                    chunk = await asyncio.wait_for(
+                        proc.stdout.read(8192), timeout=read_to,
+                    )
+                except asyncio.TimeoutError:
+                    # Distinguish idle stall from wall-edge.
+                    if (wall_deadline - loop.time()) <= 0.5:
+                        raise TimeoutError(
+                            f"claude wall timeout after {self.timeout}s "
+                            f"(received {sum(len(c) for c in stdout_chunks)} bytes)"
+                        )
+                    raise ProposerStalled(
+                        f"claude produced no output for {self.idle_timeout}s "
+                        f"(received {sum(len(c) for c in stdout_chunks)} bytes total)"
+                    )
+                if not chunk:        # EOF — process finished writing
+                    break
+                stdout_chunks.append(chunk)
+        finally:
+            # Always reap the process so we don't leak children.
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=5.0)
+            except (asyncio.TimeoutError, Exception):
+                pass
+            stderr_task.cancel()
+            try:
+                await stderr_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+        rc = proc.returncode if proc.returncode is not None else -1
+        stdout_text = b"".join(stdout_chunks).decode("utf-8", errors="replace")
+        stderr_text = b"".join(stderr_chunks).decode("utf-8", errors="replace").strip()
+        if rc != 0:
+            raise RuntimeError(
+                f"claude --print failed (rc={rc}): {stderr_text}"
+            )
+        return stdout_text
 
     async def close(self) -> None:
         pass  # No persistent connections
