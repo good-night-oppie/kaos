@@ -1,0 +1,89 @@
+{
+  "name": "action-realization-probe",
+  "version": "v1",
+  "pre_registered_at": "2026-05-24",
+  "spec_doc": "docs/roadmap/v0.9.md",
+  "spec_doc_section": "PR-4 — action-realization-probe (Life-Harness narrow slice, PROBE ONLY)",
+  "source_paper": "Life-Harness arXiv:2605.22166",
+  "mechanism_described_but_NOT_implemented": "pre-execution Action Realization Layer wrapping the tool registry — deterministic validation/canonicalization/blocking of malformed tool calls before they execute. v0.9 ships ONLY this probe, never the mechanism. If the probe ACCEPTs, v0.10 may build the mechanism; otherwise the rejection joins the five other evaluated rejections.",
+
+  "binding_thesis": "An action-realization layer that blocks/canonicalizes malformed tool calls BEFORE execution provides a measurable lift over KAOS v0.8.3 native (critical-step localizer + diagnoser + retry-with-feedback) on the action-class failure slice, with causal isolation, no regression on the non-action control slice, and inline overhead within the two-timescale budget.",
+
+  "workload_invariants": {
+    "source": "organic — sampled from existing dream_runs / failure_fingerprints / critical_steps populated by v0.8.3 native classification",
+    "action_class_slice": {
+      "n_min": 200,
+      "definition": "tool-call failures where the v0.8.3 critical-step localizer (or its surrogate) tags the failure as action-class (malformed args, schema violation, unparseable tool input, unknown-tool)",
+      "label_source": "failure_fingerprints.taxonomy_class = 'action' OR critical_steps with rationale matching action-class regex"
+    },
+    "control_slice": {
+      "n_min": 200,
+      "definition": "tool-call failures where v0.8.3 classifies non-action (planning, memory, system)",
+      "label_source": "failure_fingerprints.taxonomy_class IN ('planning','memory','system','unknown')"
+    },
+    "synthetic_fallback": "NONE — synthetic workload IS NOT permitted under this lock. If organic n_action < 200 OR n_control < 200, the harness MUST emit VOID#1 (insufficient organic sample). No retune-and-rerun under VOID#1 is permitted to substitute synthetic data; the next attempt requires more organic data, not a different sampler."
+  },
+
+  "arms": {
+    "B0": "naive baseline — execute every tool call without any validation, diagnoser, or retry. Establishes the worst-case bar; the probe MUST beat B0 by a large margin to be sane.",
+    "B1": "v0.8.3 native baseline — critical-step localizer + diagnoser + retry-with-feedback. THE real bar.",
+    "FULL": "Action Realization Layer — pre-execution validation/canonicalization/blocking of malformed tool calls before the tool boundary. (Probe-only: the layer is implemented as a thin wrapper used ONLY inside this bench; it does NOT ship in kaos/.)",
+    "L1": "lesion — Action Realization Layer registered but should_activate=False. Isolates 'library presence' from 'intervention'.",
+    "L2": "lesion — Action Realization Layer fires on a random subset (same activation rate as FULL, but uncorrelated with failure prediction). Controls for 'any intervention helps'."
+  },
+
+  "kill_gates": {
+    "G1": {
+      "name": "beats v0.8.3 native baseline",
+      "kill": true,
+      "predicate": "FULL completion-rate on action-class slice MINUS B1 completion-rate on action-class slice >= 0.040, bootstrap95 CI lower bound > 0.0, n >= 200",
+      "threshold_pp": 4.0,
+      "ci_alpha": 0.05,
+      "rationale": "the real bar — must beat KAOS-v0.8.3-native, not naive. Anything less than +4pp on the slice the mechanism is designed for is indistinguishable from the localizer-plus-diagnoser KAOS already has."
+    },
+    "G2": {
+      "name": "causal isolation via lesions",
+      "kill": true,
+      "predicate": "(FULL - L1) >= 0.030 AND (FULL - L2) >= 0.020",
+      "threshold_vs_l1_pp": 3.0,
+      "threshold_vs_l2_pp": 2.0,
+      "rationale": "lift must come from the validation intervention, not from library presence (L1) or arbitrary intervention (L2)."
+    },
+    "G3": {
+      "name": "no regression on non-action control slice",
+      "kill": true,
+      "predicate": "FULL completion-rate on control slice >= B1 completion-rate on control slice - 0.010",
+      "max_regression_pp": 1.0,
+      "rationale": "explicit guard against the SWE-Skills-Bench failure mode (3/49 deployed skills DEGRADED performance). A feature that helps where it should but quietly hurts elsewhere is a net loss."
+    },
+    "G4": {
+      "name": "inline overhead within two-timescale budget",
+      "kill": true,
+      "predicate": "p95 inline overhead per tool call < 500 microseconds",
+      "budget_us": 500,
+      "rationale": "KAOS's inline hooks must stay in microsecond territory. Anything slower belongs in the dream-cycle, not the call path."
+    }
+  },
+
+  "non_kill_gates": {
+    "G0": {
+      "name": "sanity floor",
+      "kill": false,
+      "predicate": "EVERY arm achieves >= 0.95 completion-rate on a frozen sanity slice of trivially-valid tool calls (well-formed args, known tool, no schema violation). Catches harness defects where an arm refuses to execute anything.",
+      "rationale": "VOID-on-fail. If an arm can't even execute trivially-valid calls, the run is uninterpretable."
+    }
+  },
+
+  "verdict_rule": "VOID if G0 fails or judge-audit kappa < 0.85 or workload n minima unmet. ACCEPT iff G1 AND G2 AND G3 AND G4 all pass. ANY single kill-gate failure REJECTS. No retune-and-rerun.",
+
+  "no_retune_clause": "Thresholds in kill_gates are BYTE-FROZEN at this commit. A change to any threshold or predicate requires a NEW commit + a NEW entry in KNOWN_LOCK_SHA256. Goalpost moves are mechanically impossible: the harness refuses to run on any lock whose sha256 is not pre-registered.",
+
+  "judge": {
+    "kind": "blind",
+    "implementation": "kaos.eval.harness.judge.judge_arm with SurrogateVerifier in heuristic mode (router=None)",
+    "kappa_min": 0.85,
+    "label_source": "mechanical: did the tool call ultimately produce a non-error result within the arm's allowed retry budget? Set-membership over canonical outcomes; the verifier never sees arm identity."
+  },
+
+  "honest_expected_outcome": "REJECT or VOID is the likely outcome (~0.55 confidence per the SWE-Skills-Bench negative prior and the strong v0.8.3 native baseline). REJECT is a SUCCESSFUL outcome under this discipline — it joins SAGE, synthesis-as-consolidation, AutoResearchClaw, HASP as evaluated-and-rejected, freeing v0.10 to ship something with real evidence rather than a mechanism we hope works."
+}
