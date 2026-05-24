@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 SCHEMA_SQL = """
 -- Agent Registry
@@ -554,6 +554,40 @@ ALTER TABLE shared_log ADD COLUMN decide_mode TEXT
 """
 
 
+# Migration to v9: experiment journal. One additive table that records
+# every probe / mh_search / benchmark run that flows through kaos.eval
+# (and anywhere else that calls ExperimentStore.log_run). Designed to
+# answer the v0.9 "queryability" gap: "which run produced THIS verdict
+# on THIS sha, and what changed since the last one?"
+MIGRATION_V9_SQL = """
+CREATE TABLE IF NOT EXISTS experiments (
+    exp_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name             TEXT NOT NULL,                    -- free label (e.g. "synthesis-consolidation")
+    family           TEXT,                             -- "probe" | "mh_search" | "benchmark" | ...
+    git_sha          TEXT,                             -- commit hash at run time
+    lock_sha256      TEXT,                             -- ISA.lock.json content hash if applicable
+    started_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now')),
+    finished_at      TEXT,
+    duration_ms      INTEGER,
+    verdict          TEXT,                             -- "ACCEPT" | "REJECT: ..." | "VOID: ..." | NULL
+    judge_kappa      REAL,
+    arms_json        TEXT NOT NULL DEFAULT '{}',       -- per-arm aggregate stats
+    gates_json       TEXT NOT NULL DEFAULT '[]',       -- list of {gate, name, passed, kill, detail}
+    metadata         TEXT NOT NULL DEFAULT '{}',       -- free-form caller payload
+    results_path     TEXT                              -- on-disk results.json if any
+);
+
+CREATE INDEX IF NOT EXISTS idx_experiments_name
+    ON experiments(name, started_at);
+CREATE INDEX IF NOT EXISTS idx_experiments_family
+    ON experiments(family, started_at);
+CREATE INDEX IF NOT EXISTS idx_experiments_verdict
+    ON experiments(verdict) WHERE verdict IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_experiments_git_sha
+    ON experiments(git_sha) WHERE git_sha IS NOT NULL;
+"""
+
+
 def init_schema(conn: sqlite3.Connection) -> None:
     """Initialize the database schema, applying migrations if needed."""
     conn.executescript(SCHEMA_SQL)
@@ -571,6 +605,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
         conn.executescript(MIGRATION_V6_SQL)
         conn.executescript(MIGRATION_V7_SQL)
         conn.executescript(MIGRATION_V8_SQL)
+        conn.executescript(MIGRATION_V9_SQL)
         conn.execute(
             "INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,)
         )
@@ -595,6 +630,8 @@ def _apply_migrations(conn: sqlite3.Connection, from_version: int, to_version: i
         conn.executescript(MIGRATION_V7_SQL)
     if from_version < 8:
         conn.executescript(MIGRATION_V8_SQL)
+    if from_version < 9:
+        conn.executescript(MIGRATION_V9_SQL)
     conn.execute(
         "INSERT INTO schema_version (version) VALUES (?)", (to_version,)
     )

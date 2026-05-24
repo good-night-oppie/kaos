@@ -43,7 +43,7 @@ class TestFreshDatabase:
         v = fresh.conn.execute(
             "SELECT MAX(version) FROM schema_version"
         ).fetchone()[0]
-        assert v == SCHEMA_VERSION == 8
+        assert v == SCHEMA_VERSION == 9
 
     def test_track_a_column_present(self, fresh):
         assert "quality" in _cols(fresh.conn, "skill_uses")
@@ -131,14 +131,16 @@ class TestUpgradeFromV7:
         path = tmp_path / "legacy.db"
         self._make_v7_db(path)
 
-        # Re-opening through init_schema must migrate 7 -> 8
+        # Re-opening through init_schema must migrate 7 -> current
+        # (v0.9 took it to 9 with the additive experiments table).
         conn = sqlite3.connect(str(path))
         init_schema(conn)
         v = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
-        assert v == 8
+        assert v == 9
         assert "quality" in _cols(conn, "skill_uses")
         assert "critical_steps" in _tables(conn)
         assert "ideal_states" in _tables(conn)
+        assert "experiments" in _tables(conn)
         # Legacy data survived
         n = conn.execute("SELECT COUNT(*) FROM skill_uses").fetchone()[0]
         assert n == 1

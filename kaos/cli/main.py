@@ -306,6 +306,156 @@ def eval_probe_falsify(ctx, probe_spec: str):
         console.print("[green]Harness is ADMISSIBLE.[/green]")
 
 
+@cli.group("experiment")
+def experiment_group():
+    """Append-only journal of probe / mh_search / benchmark runs."""
+
+
+@experiment_group.command("log")
+@click.option("--name", required=True, help="Free label (e.g. probe name)")
+@click.option("--family", default=None,
+              help="probe | mh_search | benchmark | ...")
+@click.option("--verdict", default=None,
+              help="ACCEPT | REJECT: ... | VOID: ...")
+@click.option("--judge-kappa", default=None, type=float)
+@click.option("--lock-sha256", default=None)
+@click.option("--git-sha", default=None,
+              help="HEAD sha; empty string suppresses auto-fill")
+@click.option("--arms-json", default=None,
+              help="Path to JSON file with per-arm aggregates")
+@click.option("--gates-json", default=None,
+              help="Path to JSON file with list of gate outcomes")
+@click.option("--metadata-json", default=None,
+              help="Path to JSON file with caller-defined metadata")
+@click.option("--results-path", default=None,
+              help="On-disk results.json (recorded as a pointer)")
+@click.option("--db", default=DEFAULT_DB, help="kaos.db path")
+@click.pass_context
+def experiment_log(ctx, name: str, family: str | None,
+                   verdict: str | None, judge_kappa: float | None,
+                   lock_sha256: str | None, git_sha: str | None,
+                   arms_json: str | None, gates_json: str | None,
+                   metadata_json: str | None, results_path: str | None,
+                   db: str):
+    """Insert one experiment row. Echoes the new exp_id."""
+    from kaos.experiments import ExperimentStore
+
+    def _load_json(path: str | None, default):
+        if not path:
+            return default
+        return json.loads(Path(path).read_text())
+
+    with ExperimentStore(db) as store:
+        exp_id = store.log_run(
+            name=name, family=family, verdict=verdict,
+            judge_kappa=judge_kappa, lock_sha256=lock_sha256,
+            git_sha=git_sha,
+            arms=_load_json(arms_json, {}),
+            gates=_load_json(gates_json, []),
+            metadata=_load_json(metadata_json, {}),
+            results_path=results_path,
+        )
+
+    if _json_out(ctx, {"exp_id": exp_id, "name": name}):
+        return
+    console.print(f"[green]exp_id={exp_id}[/green]  {name}")
+
+
+@experiment_group.command("list")
+@click.option("--name", default=None)
+@click.option("--family", default=None)
+@click.option("--verdict-prefix", default=None,
+              help="Filter to verdicts starting with this prefix "
+                   "(e.g. REJECT)")
+@click.option("--limit", default=50, type=int)
+@click.option("--db", default=DEFAULT_DB, help="kaos.db path")
+@click.pass_context
+def experiment_list(ctx, name: str | None, family: str | None,
+                    verdict_prefix: str | None, limit: int, db: str):
+    """List recent experiments, newest first."""
+    from kaos.experiments import ExperimentStore
+
+    with ExperimentStore(db) as store:
+        rows = store.list(name=name, family=family,
+                          verdict_prefix=verdict_prefix, limit=limit)
+
+    if _json_out(ctx, {"experiments": [
+        {"exp_id": r.exp_id, "name": r.name, "family": r.family,
+         "git_sha": r.git_sha, "lock_sha256": r.lock_sha256,
+         "started_at": r.started_at, "verdict": r.verdict,
+         "judge_kappa": r.judge_kappa}
+        for r in rows
+    ]}):
+        return
+
+    console.print(f"[bold]{len(rows)} experiment(s)[/bold]")
+    for r in rows:
+        v = r.verdict or "—"
+        vc = ("green" if v.startswith("ACCEPT")
+              else "red" if v.startswith("REJECT")
+              else "yellow" if v.startswith("VOID")
+              else "white")
+        sha = (r.git_sha or "—")[:8]
+        console.print(
+            f"  [{vc}]#{r.exp_id:<5}[/{vc}] {r.started_at}  "
+            f"{r.name:30}  [{vc}]{v[:40]}[/{vc}]  {sha}"
+        )
+
+
+@experiment_group.command("show")
+@click.argument("exp_id", type=int)
+@click.option("--db", default=DEFAULT_DB, help="kaos.db path")
+@click.pass_context
+def experiment_show(ctx, exp_id: int, db: str):
+    """Dump one experiment row."""
+    from dataclasses import asdict
+
+    from kaos.experiments import ExperimentStore
+
+    with ExperimentStore(db) as store:
+        exp = store.get(exp_id)
+    if exp is None:
+        if _json_err(ctx, f"no experiment #{exp_id}"):
+            return
+        console.print(f"[red]no experiment #{exp_id}[/red]")
+        ctx.exit(1)
+        return
+
+    if _json_out(ctx, asdict(exp)):
+        return
+    console.print(json.dumps(asdict(exp), indent=2))
+
+
+@experiment_group.command("compare")
+@click.argument("a_id", type=int)
+@click.argument("b_id", type=int)
+@click.option("--db", default=DEFAULT_DB, help="kaos.db path")
+@click.pass_context
+def experiment_compare(ctx, a_id: int, b_id: int, db: str):
+    """Diff two experiment rows by field. Useful for 'what changed
+    since the last run?'."""
+    from kaos.experiments import ExperimentStore
+
+    with ExperimentStore(db) as store:
+        try:
+            diff = store.compare(a_id, b_id)
+        except ValueError as e:
+            if _json_err(ctx, str(e)):
+                return
+            console.print(f"[red]{e}[/red]")
+            ctx.exit(1)
+            return
+
+    if _json_out(ctx, diff):
+        return
+    console.print(f"[bold]compare #{a_id} vs #{b_id}[/bold]")
+    if not diff["changes"]:
+        console.print("[green]no changes[/green]")
+        return
+    for k, (va, vb) in diff["changes"].items():
+        console.print(f"  [yellow]{k}[/yellow]: {va!r}  ->  {vb!r}")
+
+
 @cli.command()
 @click.argument("task")
 @click.option("--name", "-n", required=True, help="Agent name")
