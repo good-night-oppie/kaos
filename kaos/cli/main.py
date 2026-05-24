@@ -185,6 +185,127 @@ def doctor_proposer(ctx, config_file: str, wall_timeout: float,
         ctx.exit(1)
 
 
+@cli.group("eval")
+def eval_group():
+    """Falsifiable-eval primitive (kaos.eval.harness)."""
+
+
+@eval_group.group("probe")
+def eval_probe_group():
+    """Run / verify / falsify a Probe subclass."""
+
+
+def _load_probe_class(spec: str):
+    """spec = ``pkg.module:ClassName``."""
+    import importlib
+    if ":" not in spec:
+        raise click.UsageError(
+            f"--probe must be 'pkg.module:ClassName', got {spec!r}"
+        )
+    mod_name, cls_name = spec.split(":", 1)
+    mod = importlib.import_module(mod_name)
+    try:
+        return getattr(mod, cls_name)
+    except AttributeError as e:
+        raise click.UsageError(
+            f"module {mod_name!r} has no attribute {cls_name!r}"
+        ) from e
+
+
+@eval_probe_group.command("run")
+@click.option("--probe", "probe_spec", required=True,
+              help="Probe class as 'pkg.module:ClassName'")
+@click.option("--out-dir", required=True,
+              help="Directory to write results.json + per-arm artefacts")
+@click.pass_context
+def eval_probe_run(ctx, probe_spec: str, out_dir: str):
+    """Execute the probe end-to-end. Writes results.json with the
+    binding verdict. Exits non-zero on REJECT/VOID."""
+    cls = _load_probe_class(probe_spec)
+    probe = cls()
+    result = probe.run(out_dir=out_dir)
+    verdict = result.get("verdict", "?")
+
+    if _json_out(ctx, {"probe": probe_spec, "out_dir": out_dir,
+                       "verdict": verdict,
+                       "judge_kappa": result.get("judge_kappa"),
+                       "gates": result.get("gates", [])}):
+        if not verdict.startswith("ACCEPT"):
+            ctx.exit(1)
+        return
+
+    console.print(f"[bold]Probe[/bold]: {probe_spec}")
+    console.print(f"[bold]Verdict[/bold]: {verdict}")
+    if not verdict.startswith("ACCEPT"):
+        ctx.exit(1)
+
+
+@eval_probe_group.command("verify")
+@click.option("--probe", "probe_spec", required=True,
+              help="Probe class as 'pkg.module:ClassName'")
+@click.option("--results", "results_path", required=True,
+              help="Path to results.json produced by 'probe run'")
+@click.pass_context
+def eval_probe_verify(ctx, probe_spec: str, results_path: str):
+    """Re-compute the verdict from a saved results.json. Confirms
+    the on-disk verdict matches the gate code at HEAD."""
+    cls = _load_probe_class(probe_spec)
+    probe = cls()
+    verdict = probe.verify(results_path)
+
+    if _json_out(ctx, {"probe": probe_spec, "results": results_path,
+                       "verdict": verdict}):
+        if not verdict.startswith("ACCEPT"):
+            ctx.exit(1)
+        return
+
+    console.print(f"[bold]Verify[/bold]: {results_path}")
+    console.print(f"[bold]Verdict[/bold]: {verdict}")
+    if not verdict.startswith("ACCEPT"):
+        ctx.exit(1)
+
+
+@eval_probe_group.command("falsify")
+@click.option("--probe", "probe_spec", required=True,
+              help="Probe class as 'pkg.module:ClassName'")
+@click.pass_context
+def eval_probe_falsify(ctx, probe_spec: str):
+    """Gate-first self-test: substitute the feature arm by a baseline
+    and prove a kill-gate fires. A harness that cannot lose is
+    INADMISSIBLE; exits non-zero in that case."""
+    cls = _load_probe_class(probe_spec)
+    probe = cls()
+    outcomes, verdict = probe.falsify()
+    admissible = verdict.startswith("REJECT")
+
+    if _json_out(ctx, {"probe": probe_spec, "verdict": verdict,
+                       "admissible": admissible,
+                       "outcomes": [
+                           {"gate": o.gate, "name": o.name,
+                            "passed": o.passed, "kill": o.kill,
+                            "detail": o.detail}
+                           for o in outcomes
+                       ]}):
+        if not admissible:
+            ctx.exit(1)
+        return
+
+    console.print(f"[bold]Falsify[/bold]: {probe_spec}")
+    for o in outcomes:
+        flag = "PASS" if o.passed else ("FAIL-KILL" if o.kill else "FAIL")
+        c = "green" if o.passed else ("red" if o.kill else "yellow")
+        console.print(f"  [{c}][{flag:9}][/{c}] {o.gate}  {o.name}")
+        if o.detail:
+            console.print(f"             [dim]{o.detail}[/dim]")
+    console.print(f"[bold]Verdict[/bold]: {verdict}")
+    if not admissible:
+        console.print("[red]BROKEN HARNESS — feature cannot lose. "
+                      "Inadmissible per gate-first invariant.[/red]")
+        ctx.exit(1)
+    else:
+        console.print("[green]Harness is ADMISSIBLE.[/green]")
+
+
 @cli.command()
 @click.argument("task")
 @click.option("--name", "-n", required=True, help="Agent name")
