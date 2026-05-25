@@ -2,7 +2,7 @@
 
 **The living synthesis of agentic AI research.** Eight research breakthroughs — neuroplasticity that rewires the library automatically, skills that compound across projects, memory that learns, coordination that requires consensus, context that compresses without loss, agents that co-evolve, failures diagnosed automatically, strategies optimized continuously — unified in one framework. Safe, reliable, and production-grade by default. Self-improving by design.
 
-[![Version](https://img.shields.io/badge/version-0.8.3-blueviolet)]()
+[![Version](https://img.shields.io/badge/version-0.9.0-blueviolet)]()
 [![Python](https://img.shields.io/badge/python-3.11+-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-blue)]()
 [![Research](https://img.shields.io/badge/research%20integrations-8-brightgreen)]()

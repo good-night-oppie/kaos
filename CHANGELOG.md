@@ -2,6 +2,42 @@
 
 All notable changes to KAOS are documented here.
 
+## [0.9.0] - 2026-05-24
+
+### Reliability, queryability, and a falsifiable-eval primitive
+
+v0.9 is deliberately small. v0.8.3 over-delivered (quality score + failure taxonomy + critical-step localizer + ISA/ISC + war-room UI in one cycle); the repo had spent its mechanism-debt budget. Meanwhile a real P0 user-facing bug (#11) was unfixed and AI-reported #8 (experiment tracking) was open. Five mechanism candidates had been REJECTED or PARKED in research arc earlier in the cycle (SAGE, synthesis-as-consolidation, AutoResearchClaw, HASP, Life-Harness mechanism). Shipping mechanism #N+1 on top of an unfixed P0 would have been theater.
+
+v0.9 productizes the discipline that produced those rejections, fixes the P0, makes experiments queryable, and ships one pre-registered probe whose verdict is reported honestly. **One additive schema migration (v8 → v9), no breaking changes, no new mechanism shipped.**
+
+**PR-1 — `proposer-streaming` (fixes P0 #11)**
+- `ClaudeCodeProvider` now uses `asyncio.create_subprocess_exec` with incremental `proc.stdout.read(8192)` gated by `asyncio.wait_for(read_to)` where `read_to = min(idle_timeout, remaining_wall)`
+- New `ProposerStalled` exception — distinct from `TimeoutError`; the meta-harness search loop catches it and continues to the next iteration instead of dying
+- New CLI: `kaos doctor proposer` smoke-tests every configured provider in parallel and reports `ok / stalled / wall-timeout / error / no-client` with latency
+
+**PR-2 — `kaos.eval.harness` (codify the falsifiable apparatus)**
+- New module `kaos/eval/harness/` with reusable primitives: `ArmResults`, `QueryResult`, `GateOutcome`, `bootstrap_diff_ci` (seeded, one inferential statistic for the whole harness), `load_lock` + `LockTamperError` (hash-locked pre-registration that refuses to run on edited locks), `judge_arm` via `SurrogateVerifier` heuristic (anonymised + shuffled stream — arm leakage impossible by construction), `compute_verdict` (uniform ACCEPT/REJECT/VOID rule), and the `Probe` ABC
+- New CLI: `kaos eval probe {run, verify, falsify} --probe pkg.mod:ClassName`
+- KAOS becomes the first agent framework that ships its own kill-switch primitive
+
+**PR-3 — `experiments` journal (closes #8)**
+- Schema v8 → v9: one additive table (`experiments`) recording every probe / mh_search / benchmark run alongside `git_sha`, `lock_sha256`, per-arm aggregates, gate list, verdict — answers "what changed since the last run?" without grep
+- New `ExperimentStore` with `log_run() / get() / list() / compare()` and `git_sha` auto-fill from `git rev-parse HEAD`
+- New CLI: `kaos experiment {log, list, show, compare}`
+- No new MCP tools — surface stays at 50
+
+**PR-4 — `action-realization-probe` (Life-Harness narrow slice, PROBE ONLY)**
+- Pre-registered probe at `demo_action_realization_bench/ISA.lock.json` (sha256 `3ca89983...`, committed BEFORE any probe code)
+- Kill gates G1-G4 byte-frozen at lock time: FULL beats v0.8.3-native by ≥+4.0pp on action-class slice (G1), causal isolation via L1/L2 lesions ≥+3.0/+2.0pp (G2), no regression on non-action control ≤−1.0pp (G3), inline p95 overhead <500µs (G4)
+- Workload: ORGANIC ONLY — `synthetic_fallback: NONE` in lock
+- Falsification self-test ADMISSIBLE: `FULL := B1` emits `[KILL: G1]` as required
+- **Binding verdict: `VOID#1 (insufficient organic sample)`** — n_action=2 < 200 in the development DB. Per the lock and the spec's §Risks paragraph, this is the correct outcome with no retune permitted. The mechanism stays parked alongside Life-Harness's other un-evaluated slices until enough organic action-class incidents accumulate to re-run at the same lock hash
+- v0.10 is NOT pre-committed to the mechanism. Six candidates were evaluated this v0.9 cycle, zero mechanisms shipped — the discipline IS the deliverable
+
+**Tests: 593 passing** (up from 557 at v0.8.3 + 36 new: 7 streaming, 20 eval-harness, 9 experiments, 7 action-realization-probe + 2 schema-migration version-pin updates).
+
+**No banned-package use** (no `litellm`, no `openai` SDK; raw httpx + `claude_code` provider + `agent_sdk` only).
+
 ## [0.8.3] - 2026-05-13
 
 ### Finer-grained outcomes, failures, objectives — and a war-room UI
