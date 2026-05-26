@@ -1,7 +1,7 @@
 # KAOS — Kernel for Agent Orchestration & Sandboxing
 
 ## Project Overview
-KAOS is a local-first multi-agent orchestration framework (v0.6.0). Every agent gets an isolated, auditable virtual filesystem backed by a single SQLite `.db` file.
+KAOS is a local-first multi-agent orchestration framework (v0.9.0). Every agent gets an isolated, auditable virtual filesystem backed by a single SQLite `.db` file. No fine-tuning, no LoRA, no embeddings, no GPU requirement, no mandatory external services.
 
 ## Package & CLI
 - Package: `kaos` (import with `from kaos import Kaos`)
@@ -22,25 +22,43 @@ uv run python -m pytest    # run tests
 
 ## Architecture
 ```
-kaos/core.py              → Kaos VFS engine (main class)
-kaos/schema.py            → SQLite schema
-kaos/blobs.py             → Content-addressable blob store
-kaos/events.py            → Append-only event journal
-kaos/checkpoints.py       → Checkpoint/restore
-kaos/isolation.py         → Isolation tiers (logical + FUSE)
-kaos/ccr/runner.py        → Agent execution loop
-kaos/ccr/tools.py         → Tool registry
-kaos/router/gepa.py       → GEPA model router (4 providers)
-kaos/router/providers.py  → LLM providers (local, openai, anthropic, claude_code)
-kaos/router/agent_sdk.py  → Claude Agent SDK provider (agent_sdk)
-kaos/router/classifier.py → LLM + heuristic classifier
-kaos/router/vllm_client.py → Raw httpx vLLM client
-kaos/mcp/server.py        → MCP server (18 tools)
-kaos/cli/main.py          → CLI (20+ commands, --json output)
-kaos/metaharness/worker.py → Detached worker for background mh_search
-kaos/metaharness/search.py → Meta-Harness search loop
-kaos/metaharness/verifier.py → Surrogate Verifier (structured failure diagnostics)
+kaos/core.py                 → Kaos VFS engine (main class)
+kaos/schema.py               → SQLite schema (v9 — additive experiments table)
+kaos/blobs.py                → Content-addressable blob store
+kaos/events.py               → Append-only event journal
+kaos/checkpoints.py          → Checkpoint/restore
+kaos/isolation.py            → Isolation tiers (logical + FUSE)
+kaos/experiments.py          → ExperimentStore — journal of probe/mh_search runs (v0.9)
+kaos/eval/harness/           → Falsifiable-eval primitive (v0.9)
+  types.py / stats.py / manifest.py / judge.py / verdict.py / probe.py
+kaos/ccr/runner.py           → Agent execution loop
+kaos/ccr/tools.py            → Tool registry
+kaos/router/gepa.py          → GEPA model router (5 providers)
+kaos/router/providers.py     → 5 providers (claude_code: streaming + idle/wall timeouts, v0.9)
+kaos/router/agent_sdk.py     → Claude Agent SDK provider (agent_sdk)
+kaos/router/classifier.py    → LLM + heuristic classifier
+kaos/router/vllm_client.py   → Raw httpx vLLM client
+kaos/mcp/server.py           → MCP server (50 tools — held flat in v0.9)
+kaos/cli/main.py             → CLI (now includes doctor/eval/experiment groups)
+kaos/metaharness/worker.py   → Detached worker for background mh_search
+kaos/metaharness/search.py   → Meta-Harness loop (catches ProposerStalled, v0.9)
+kaos/metaharness/verifier.py → SurrogateVerifier (used as blind judge in eval.harness)
+kaos/dream/                  → Dream cycle, failure taxonomy, critical-step localizer
+kaos/skills.py               → Skill library + neuroplasticity
+kaos/ideal_state.py          → ISA/ISC (v0.8.3)
+kaos/ui/                     → War-room UI (v0.8.3)
 ```
+
+## v0.9 falsifiable-eval discipline (read before proposing any new mechanism)
+Every mechanism candidate must pass a pre-registered, hash-locked, falsifiable probe BEFORE shipping. Pattern (PR-2 + PR-4):
+1. Write `ISA.lock.json` with kill gates G1..GN. Compute sha256. Commit it.
+2. Add the sha256 to `KNOWN_LOCK_SHA256` in the probe's gates module — harness refuses to run on edited locks.
+3. Build a `kaos.eval.harness.Probe` subclass.
+4. Falsification self-test: confirm `FULL := B0` (or stronger baseline) emits `[KILL: G1]`. A harness that can't kill the feature is INADMISSIBLE.
+5. Run the binding probe. Report verdict (ACCEPT / REJECT / VOID) honestly. **No retune-and-rerun.**
+6. Log the run with `kaos experiment log` for queryability.
+
+Six candidates evaluated this v0.9 cycle, zero mechanisms shipped — REJECT/VOID is a successful outcome.
 
 ## Rules
 - NEVER use litellm — it is banned
