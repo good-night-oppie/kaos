@@ -2,11 +2,12 @@
 
 > How to expose KAOS as an MCP server for Claude Code and other MCP-compatible clients.
 
-![MCP Server Integration — 50 tools, Claude Code, agent_spawn and mh_search](../docs/demos/kaos_04_mcp_server.gif)
+![MCP Server Integration — 58 tools, Claude Code, agent_spawn and mh_search](../docs/demos/kaos_04_mcp_server.gif)
 
-> **v0.9.0 notes (MCP surface held flat at 50 tools):**
-> - **No new MCP tools in v0.9** — the release adds three CLI groups (`kaos doctor`, `kaos eval`, `kaos experiment`) but deliberately does NOT expose them through MCP. The eval-harness primitive and experiment journal are meant to be invoked by humans/scripts in a release-cut workflow, not by mid-conversation agents. Use the CLI for them.
-> - **PR-1 fixes proposer hang in the meta-harness path** — `claude_code` provider now uses `asyncio.create_subprocess_exec` with incremental streaming + idle/wall timeouts, and the search loop catches the new `ProposerStalled` exception (recoverable) distinctly from `TimeoutError` (hard). MCP-side `mh_search` / `mh_resume` benefit automatically; no API changes.
+> **v0.9.1 notes (MCP surface 50 -> 58 tools):**
+> - **All eight v0.9 surfaces now MCP-callable** — two days of real use after v0.9.0 confirmed the read-side of the experiment journal is a legitimate mid-conversation need ("what mechanisms have we evaluated?"), and the eval probe + doctor surfaces compose cleanly into agent-driven research workflows. v0.9.1 wraps all eight.
+> - **8 new tools (v0.9.1):** `doctor_proposer` (1), `eval_probe_{falsify,run,verify}` (3), `experiment_{log,list,show,compare}` (4). See the per-tool entries in the "Available Tools" section below.
+> - **PR-1 (carried from v0.9.0)** fixes the proposer hang in the meta-harness path — `claude_code` provider now uses `asyncio.create_subprocess_exec` with incremental streaming + idle/wall timeouts, and the search loop catches `ProposerStalled` (recoverable) distinctly from `TimeoutError` (hard). MCP-side `mh_search` / `mh_resume` benefit automatically; no API changes.
 
 > **v0.5.2 notes:**
 > - **CLI-first architecture** — `--json` output on all commands. Agents can shell out to `kaos --json ls` instead of using MCP (10-32x cheaper on tokens).
@@ -32,9 +33,9 @@
 
 KAOS implements the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP), allowing Claude Code and other MCP clients to spawn agents, read/write files, create checkpoints, run SQL queries, and orchestrate parallel agent execution through natural language.
 
-The MCP server is implemented in `kaos/mcp/server.py` using the `mcp` Python package. It wraps the `Kaos` and `ClaudeCodeRunner` instances, exposing **50 tools** across the following categories: Lifecycle, VFS, State, Checkpoints, Query, Memory, Shared-Log, Skills, Dream, Failure / Critical-Step, Ideal-State, Meta-Harness, and Orchestration.
+The MCP server is implemented in `kaos/mcp/server.py` using the `mcp` Python package. It wraps the `Kaos` and `ClaudeCodeRunner` instances, exposing **58 tools** across the following categories: Lifecycle, VFS, State, Checkpoints, Query, Memory, Shared-Log, Skills, Dream, Failure / Critical-Step, Ideal-State, Meta-Harness, Orchestration, and (v0.9.1) Doctor / Eval / Experiment.
 
-**Surface evolution:** v0.5 shipped 18 tools (lifecycle + VFS + meta-harness). v0.6–v0.8 grew the surface to 50 as memory, shared-log, skills, neuroplasticity, failure-taxonomy, critical-step localizer, and ISA/ISC layers landed. **v0.9 deliberately holds the surface flat at 50** — its new CLI groups (`kaos doctor`, `kaos eval`, `kaos experiment`) are intentionally not exposed through MCP. They belong in release-cut and CI workflows, not in mid-conversation agent calls.
+**Surface evolution:** v0.5 shipped 18 tools (lifecycle + VFS + meta-harness). v0.6–v0.8 grew the surface to 50 as memory, shared-log, skills, neuroplasticity, failure-taxonomy, critical-step localizer, and ISA/ISC layers landed. **v0.9.0 held the surface flat at 50** while the new CLI groups stabilized. **v0.9.1 added 8 tools** (50 → 58) — the eight commands introduced in v0.9 are now MCP-callable so agents can run probes, query the experiments journal, and smoke-test providers without shelling out.
 
 ---
 
@@ -684,6 +685,104 @@ Resume an interrupted Meta-Harness search from its last completed iteration. All
   "duration_seconds": 512.7
 }
 ```
+
+---
+
+## v0.9.1 Tools — Doctor / Eval / Experiment
+
+Added in **v0.9.1** (50 → 58 tools). These wrap the CLI surfaces introduced in v0.9.0 so agents can invoke them through MCP without shelling out.
+
+### doctor_proposer
+
+Sends a tiny "Reply with OK" prompt to every configured provider and reports latency + stream health. Catches the P0 #11 failure mode (proposer hang on CLI subprocess) before it blocks a meta-harness search.
+
+```json
+{
+  "config_file": "kaos.yaml",
+  "wall_timeout": 30.0,
+  "idle_timeout": 10.0
+}
+```
+
+Returns: `{"results": [{"model": "claude-sonnet", "status": "ok", "ms": 29583.7, "detail": "OK"}], "failed": []}`
+
+Status values: `ok` / `stalled` (recoverable `ProposerStalled`) / `wall-timeout` / `error` / `no-client`.
+
+### eval_probe_falsify
+
+Gate-first self-test — substitutes the feature arm by a baseline and asserts a kill-gate fires. A harness that cannot lose is **inadmissible** and `admissible: false` should block any downstream trust in the probe.
+
+```json
+{"probe": "demo_action_realization_bench.probe_adapter:ActionRealizationProbe"}
+```
+
+Returns: `{"verdict": "REJECT: kill gate(s) failed: G1, G2", "admissible": true, "outcomes": [...]}`.
+
+### eval_probe_run
+
+Executes a pre-registered probe end-to-end and writes `results.json` with the binding ACCEPT/REJECT/VOID verdict. Long-running (minutes to hours).
+
+```json
+{
+  "probe": "demo_action_realization_bench.probe_adapter:ActionRealizationProbe",
+  "out_dir": "demo_action_realization_bench"
+}
+```
+
+### eval_probe_verify
+
+Re-computes the verdict from a saved `results.json` against the gate code at HEAD. Fast, read-only — safe mid-conversation.
+
+```json
+{
+  "probe": "demo_action_realization_bench.probe_adapter:ActionRealizationProbe",
+  "results_path": "demo_action_realization_bench/results.json"
+}
+```
+
+### experiment_log
+
+Insert one row in the experiments journal recording a probe / mh_search / benchmark run alongside `git_sha`, `lock_sha256`, per-arm aggregates, gates, and verdict. `git_sha` auto-fills from `git rev-parse HEAD` unless an empty string is passed to suppress.
+
+```json
+{
+  "name": "action-realization-probe",
+  "family": "probe",
+  "verdict": "VOID#1: insufficient organic action-class sample",
+  "lock_sha256": "3ca89983...",
+  "arms": {"FULL": {"acc_action": 0.42}},
+  "gates": [{"gate": "G1", "passed": false, "kill": true}],
+  "results_path": "demo_action_realization_bench/results.json"
+}
+```
+
+Returns: `{"exp_id": 42, "name": "action-realization-probe"}`.
+
+### experiment_list
+
+Newest-first listing of recent experiment rows. Optional filters: `name`, `family`, `verdict_prefix` (e.g. `REJECT`, `VOID`, `ACCEPT`), `limit`.
+
+```json
+{"verdict_prefix": "REJECT", "limit": 20}
+```
+
+### experiment_show
+
+Dump one full experiment row by `exp_id`, including arms aggregates, gates, metadata, and results_path.
+
+```json
+{"exp_id": 42}
+```
+
+### experiment_compare
+
+Diff two experiment rows by field. Useful for "what changed since the last run?" across releases.
+
+```json
+{"a_id": 41, "b_id": 42}
+```
+
+Returns: `{"a": {"exp_id": 41, "started_at": "..."}, "b": {...}, "changes": {"verdict": ["ACCEPT", "REJECT: G1"], "arms": ["differs", "differs"]}}`.
 
 ---
 

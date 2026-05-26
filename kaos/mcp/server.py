@@ -1,12 +1,15 @@
 """MCP Server — exposes KAOS as an MCP server for Claude Code integration.
 
-Provides 25 tools covering:
+Provides 58 tools covering:
 - Agent lifecycle: spawn, spawn_only, kill, pause, resume, status
 - Agent VFS: read, write, ls
 - Checkpoints: checkpoint, restore, diff, list_checkpoints
 - Query: SQL read-only queries
 - Orchestration: parallel execution
 - Meta-Harness: search, frontier, inspect
+- Cross-agent memory, shared log, skills, dream cycle
+- Failure taxonomy + critical-step localizer + ideal-state
+- v0.9.1: doctor (1) + eval probe (3) + experiment (4)
 """
 
 from __future__ import annotations
@@ -904,6 +907,179 @@ async def list_tools() -> list[Tool]:
                 },
             },
         ),
+
+        # ── v0.9.1: Doctor (provider smoke check) ────────────────
+        Tool(
+            name="doctor_proposer",
+            description=(
+                "Send a tiny prompt to every configured provider and report "
+                "latency + stream health. Catches the P0 #11 failure mode "
+                "(proposer hang on CLI subprocess) before it blocks a "
+                "meta-harness search. Returns per-provider status: "
+                "ok/stalled/wall-timeout/error/no-client with latency in ms."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "config_file": {
+                        "type": "string", "default": "kaos.yaml",
+                        "description": "Config file path",
+                    },
+                    "wall_timeout": {
+                        "type": "number", "default": 30.0,
+                        "description": "Hard wall timeout per provider (s)",
+                    },
+                    "idle_timeout": {
+                        "type": "number", "default": 10.0,
+                        "description": "Idle (no-new-bytes) timeout (s)",
+                    },
+                },
+            },
+        ),
+
+        # ── v0.9.1: Eval — falsifiable-eval primitive ────────────
+        Tool(
+            name="eval_probe_falsify",
+            description=(
+                "Gate-first self-test: substitute the feature arm by a "
+                "baseline (FULL := B0) and prove a kill-gate fires. A harness "
+                "that cannot lose is INADMISSIBLE — any later 'pass' is "
+                "meaningless. Returns {admissible, verdict, outcomes[]}."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "probe": {
+                        "type": "string",
+                        "description": "Probe class as 'pkg.module:ClassName'",
+                    },
+                },
+                "required": ["probe"],
+            },
+        ),
+        Tool(
+            name="eval_probe_run",
+            description=(
+                "Execute a pre-registered probe end-to-end. Writes "
+                "results.json with the binding ACCEPT/REJECT/VOID verdict. "
+                "Long-running (minutes to hours). Returns the result dict."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "probe": {
+                        "type": "string",
+                        "description": "Probe class as 'pkg.module:ClassName'",
+                    },
+                    "out_dir": {
+                        "type": "string",
+                        "description": "Directory to write results.json",
+                    },
+                },
+                "required": ["probe", "out_dir"],
+            },
+        ),
+        Tool(
+            name="eval_probe_verify",
+            description=(
+                "Re-compute the verdict from a saved results.json. Confirms "
+                "the on-disk verdict matches the gate code at HEAD. "
+                "Read-only, fast, safe to call mid-conversation."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "probe": {
+                        "type": "string",
+                        "description": "Probe class as 'pkg.module:ClassName'",
+                    },
+                    "results_path": {
+                        "type": "string",
+                        "description": "Path to results.json from 'run'",
+                    },
+                },
+                "required": ["probe", "results_path"],
+            },
+        ),
+
+        # ── v0.9.1: Experiment — append-only journal ─────────────
+        Tool(
+            name="experiment_log",
+            description=(
+                "Insert one experiment row recording a probe / mh_search / "
+                "benchmark run alongside git_sha, lock_sha256, per-arm "
+                "aggregates, gates, and the verdict. git_sha auto-fills "
+                "from `git rev-parse HEAD`. Returns the new exp_id."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "family": {"type": "string",
+                               "description": "probe | mh_search | benchmark"},
+                    "verdict": {"type": "string",
+                                "description": "ACCEPT | REJECT: ... | VOID: ..."},
+                    "judge_kappa": {"type": "number"},
+                    "lock_sha256": {"type": "string"},
+                    "git_sha": {"type": "string",
+                                "description": "Empty string suppresses auto-fill"},
+                    "arms": {"type": "object", "default": {}},
+                    "gates": {"type": "array", "default": []},
+                    "metadata": {"type": "object", "default": {}},
+                    "results_path": {"type": "string"},
+                },
+                "required": ["name"],
+            },
+        ),
+        Tool(
+            name="experiment_list",
+            description=(
+                "List recent experiments, newest first. Filter by name, "
+                "family, or verdict prefix (e.g. 'REJECT' / 'VOID' / "
+                "'ACCEPT'). Useful for 'what mechanisms have we evaluated?' "
+                "queries mid-conversation."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "family": {"type": "string"},
+                    "verdict_prefix": {"type": "string"},
+                    "limit": {"type": "integer", "default": 50},
+                },
+            },
+        ),
+        Tool(
+            name="experiment_show",
+            description=(
+                "Dump one experiment row by exp_id, including the full "
+                "arms aggregates, gates list, metadata, and results_path."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "exp_id": {"type": "integer"},
+                },
+                "required": ["exp_id"],
+            },
+        ),
+        Tool(
+            name="experiment_compare",
+            description=(
+                "Diff two experiment rows by field. Returns a changed-"
+                "fields map of {field: [old, new]} for any field that "
+                "differs. Useful for 'what changed since the last run?' "
+                "across releases."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "a_id": {"type": "integer"},
+                    "b_id": {"type": "integer"},
+                },
+                "required": ["a_id", "b_id"],
+            },
+        ),
     ]
 
 
@@ -1036,12 +1212,19 @@ def _agent_has_harness(afs: Kaos, agent_id: str, harness_id: str) -> bool:
 
 
 async def _dispatch(name: str, args: dict[str, Any]) -> str:
-    """Dispatch a tool call to the appropriate handler."""
+    """Dispatch a tool call to the appropriate handler.
+
+    _afs is required for every tool. _ccr is only required by tools
+    that spawn or orchestrate agents (agent_spawn, agent_parallel,
+    mh_*). The v0.9.1 surfaces (doctor / eval probe / experiment)
+    intentionally do NOT depend on _ccr, so the per-branch assertion
+    lives inside those branches that need it.
+    """
     assert _afs is not None
-    assert _ccr is not None
 
     # ── Agent Lifecycle ──────────────────────────────────────
     if name == "agent_spawn":
+        assert _ccr is not None, "agent_spawn requires ccr"
         agent_id = _afs.spawn(name=args["name"], config=args.get("config", {}))
         result = await _ccr.run_agent(agent_id, args["task"])
         # Store full result in VFS for large outputs; return truncated preview
@@ -2095,5 +2278,223 @@ async def _dispatch(name: str, args: dict[str, Any]) -> str:
         pending = list_pending_merges(_afs.conn, limit=args.get("limit", 20))
         return json.dumps({"pending": pending}, indent=2)
 
+    # ── v0.9.1: Doctor ───────────────────────────────────────────
+    elif name == "doctor_proposer":
+        return await _dispatch_doctor_proposer(args)
+
+    # ── v0.9.1: Eval — falsifiable-eval primitive ────────────────
+    elif name == "eval_probe_falsify":
+        return _dispatch_eval_probe_falsify(args)
+    elif name == "eval_probe_run":
+        return _dispatch_eval_probe_run(args)
+    elif name == "eval_probe_verify":
+        return _dispatch_eval_probe_verify(args)
+
+    # ── v0.9.1: Experiment — append-only journal ─────────────────
+    elif name == "experiment_log":
+        return _dispatch_experiment_log(args)
+    elif name == "experiment_list":
+        return _dispatch_experiment_list(args)
+    elif name == "experiment_show":
+        return _dispatch_experiment_show(args)
+    elif name == "experiment_compare":
+        return _dispatch_experiment_compare(args)
+
     else:
         raise ValueError(f"Unknown tool: {name}")
+
+
+# ─────────────────────────────────────────────────────────────────────
+# v0.9.1 dispatch handlers
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _load_probe_class(spec: str):
+    """spec = 'pkg.module:ClassName' — same convention as the CLI."""
+    import importlib
+    if ":" not in spec:
+        raise ValueError(
+            f"probe must be 'pkg.module:ClassName', got {spec!r}"
+        )
+    mod_name, cls_name = spec.split(":", 1)
+    mod = importlib.import_module(mod_name)
+    try:
+        return getattr(mod, cls_name)
+    except AttributeError as e:
+        raise ValueError(
+            f"module {mod_name!r} has no attribute {cls_name!r}"
+        ) from e
+
+
+async def _dispatch_doctor_proposer(args: dict[str, Any]) -> str:
+    """MCP wrapper around `kaos doctor proposer`. Returns JSON with
+    per-provider {status, latency_ms, detail}."""
+    import asyncio as _aio
+    import time as _time
+    from pathlib import Path as _Path
+
+    from kaos.router.providers import ProposerStalled
+
+    config_file = args.get("config_file", "kaos.yaml")
+    wall_timeout = float(args.get("wall_timeout", 30.0))
+    idle_timeout = float(args.get("idle_timeout", 10.0))
+
+    if not _Path(config_file).exists():
+        return json.dumps({
+            "error": f"config not found: {config_file}",
+        }, indent=2)
+
+    router = GEPARouter.from_config(config_file)
+
+    async def _smoke_one(model_name: str) -> dict:
+        client = router.clients.get(model_name)
+        if client is None:
+            return {"model": model_name, "status": "no-client",
+                    "ms": None, "detail": "no LLMProvider resolved"}
+        for attr, val in (("timeout", wall_timeout),
+                          ("idle_timeout", idle_timeout)):
+            if hasattr(client, attr):
+                try:
+                    setattr(client, attr, val)
+                except Exception:
+                    pass
+        prompt = "Reply with the single word: OK"
+        msgs = [{"role": "user", "content": prompt}]
+        model_id = router.models[model_name].model_id or model_name
+        t0 = _time.perf_counter()
+        try:
+            r = await client.chat(model=model_id, messages=msgs,
+                                  temperature=0.0, max_tokens=8)
+            ms = (_time.perf_counter() - t0) * 1000
+            text = ""
+            try:
+                text = (r.choices[0].message.content or "").strip()
+            except Exception:
+                pass
+            return {"model": model_name, "status": "ok",
+                    "ms": round(ms, 1), "detail": text[:60]}
+        except ProposerStalled as e:
+            ms = (_time.perf_counter() - t0) * 1000
+            return {"model": model_name, "status": "stalled",
+                    "ms": round(ms, 1), "detail": str(e)}
+        except TimeoutError as e:
+            ms = (_time.perf_counter() - t0) * 1000
+            return {"model": model_name, "status": "wall-timeout",
+                    "ms": round(ms, 1), "detail": str(e)}
+        except Exception as e:
+            ms = (_time.perf_counter() - t0) * 1000
+            return {"model": model_name, "status": "error",
+                    "ms": round(ms, 1),
+                    "detail": f"{type(e).__name__}: {e}"}
+
+    rows = await _aio.gather(
+        *[_smoke_one(n) for n in router.models]
+    )
+    return json.dumps({
+        "results": rows,
+        "failed": [r["model"] for r in rows if r["status"] != "ok"],
+    }, indent=2)
+
+
+def _dispatch_eval_probe_falsify(args: dict[str, Any]) -> str:
+    cls = _load_probe_class(args["probe"])
+    probe = cls()
+    outcomes, verdict = probe.falsify()
+    return json.dumps({
+        "probe": args["probe"],
+        "verdict": verdict,
+        "admissible": verdict.startswith("REJECT"),
+        "outcomes": [
+            {"gate": o.gate, "name": o.name, "passed": o.passed,
+             "kill": o.kill, "detail": o.detail}
+            for o in outcomes
+        ],
+    }, indent=2)
+
+
+def _dispatch_eval_probe_run(args: dict[str, Any]) -> str:
+    cls = _load_probe_class(args["probe"])
+    probe = cls()
+    result = probe.run(out_dir=args["out_dir"])
+    return json.dumps({
+        "probe": args["probe"],
+        "out_dir": args["out_dir"],
+        "verdict": result.get("verdict"),
+        "judge_kappa": result.get("judge_kappa"),
+        "arms": result.get("arms", {}),
+        "gates": result.get("gates", []),
+    }, indent=2)
+
+
+def _dispatch_eval_probe_verify(args: dict[str, Any]) -> str:
+    cls = _load_probe_class(args["probe"])
+    probe = cls()
+    verdict = probe.verify(args["results_path"])
+    return json.dumps({
+        "probe": args["probe"],
+        "results_path": args["results_path"],
+        "verdict": verdict,
+    }, indent=2)
+
+
+def _dispatch_experiment_log(args: dict[str, Any]) -> str:
+    from kaos.experiments import ExperimentStore
+    db_path = _afs.db_path if _afs is not None else "kaos.db"
+    with ExperimentStore(db_path) as store:
+        exp_id = store.log_run(
+            name=args["name"],
+            family=args.get("family"),
+            verdict=args.get("verdict"),
+            judge_kappa=args.get("judge_kappa"),
+            lock_sha256=args.get("lock_sha256"),
+            git_sha=args.get("git_sha"),
+            arms=args.get("arms") or {},
+            gates=args.get("gates") or [],
+            metadata=args.get("metadata") or {},
+            results_path=args.get("results_path"),
+        )
+    return json.dumps({"exp_id": exp_id, "name": args["name"]}, indent=2)
+
+
+def _dispatch_experiment_list(args: dict[str, Any]) -> str:
+    from kaos.experiments import ExperimentStore
+    db_path = _afs.db_path if _afs is not None else "kaos.db"
+    with ExperimentStore(db_path) as store:
+        rows = store.list(
+            name=args.get("name"),
+            family=args.get("family"),
+            verdict_prefix=args.get("verdict_prefix"),
+            limit=int(args.get("limit", 50)),
+        )
+    return json.dumps({
+        "experiments": [
+            {"exp_id": r.exp_id, "name": r.name, "family": r.family,
+             "git_sha": r.git_sha, "lock_sha256": r.lock_sha256,
+             "started_at": r.started_at, "verdict": r.verdict,
+             "judge_kappa": r.judge_kappa}
+            for r in rows
+        ],
+    }, indent=2)
+
+
+def _dispatch_experiment_show(args: dict[str, Any]) -> str:
+    from dataclasses import asdict
+    from kaos.experiments import ExperimentStore
+    db_path = _afs.db_path if _afs is not None else "kaos.db"
+    with ExperimentStore(db_path) as store:
+        exp = store.get(int(args["exp_id"]))
+    if exp is None:
+        return json.dumps({"error": f"no experiment #{args['exp_id']}"},
+                          indent=2)
+    return json.dumps(asdict(exp), indent=2)
+
+
+def _dispatch_experiment_compare(args: dict[str, Any]) -> str:
+    from kaos.experiments import ExperimentStore
+    db_path = _afs.db_path if _afs is not None else "kaos.db"
+    with ExperimentStore(db_path) as store:
+        try:
+            diff = store.compare(int(args["a_id"]), int(args["b_id"]))
+        except ValueError as e:
+            return json.dumps({"error": str(e)}, indent=2)
+    return json.dumps(diff, indent=2)

@@ -2,6 +2,33 @@
 
 All notable changes to KAOS are documented here.
 
+## [0.9.1] - 2026-05-26
+
+### MCP exposure of v0.9 surfaces — 50 → 58 tools
+
+Patch release. v0.9.0 deliberately held the MCP surface flat while the doctor / eval / experiment CLI groups stabilized. Two days of real use confirmed the read-side of the experiment journal is a legitimate mid-conversation need (agents asking "what mechanisms have we already evaluated?") and the eval probe + doctor surfaces compose cleanly into agent-driven research workflows. v0.9.1 exposes all eight new commands through MCP so Claude Code and other MCP clients can call them directly.
+
+**New MCP tools (8):**
+
+| Tool | Category | Notes |
+|---|---|---|
+| `doctor_proposer` | Provider smoke | parallel ok/stalled/wall-timeout/error check; catches the P0 #11 failure mode before a meta-harness search burns minutes |
+| `eval_probe_falsify` | Eval | gate-first self-test (FULL := B0 must REJECT or the harness is INADMISSIBLE) |
+| `eval_probe_run` | Eval | execute a probe end-to-end; long-running; returns binding verdict + writes results.json |
+| `eval_probe_verify` | Eval | re-compute verdict from a saved results.json against gate code at HEAD; read-only, fast |
+| `experiment_log` | Experiment journal | insert one row with auto-filled git_sha |
+| `experiment_list` | Experiment journal | newest-first listing with name / family / verdict-prefix filters |
+| `experiment_show` | Experiment journal | dump one row by exp_id |
+| `experiment_compare` | Experiment journal | diff two rows by field; "what changed since the last run?" |
+
+Each tool surfaces errors as `Error: <type>: <msg>` JSON strings rather than crashing the dispatcher — the rule the existing MCP layer already follows.
+
+**Test coverage (20 new, full path):** `tests/test_mcp_v091.py` covers list_tools surface (count, required-field declarations, schema sanity), end-to-end dispatch for all 8 tools via `call_tool`, error containment for unknown tools / missing args / malformed probe specs, real round-trip log → list → show → compare against the real `ExperimentStore`, and real falsification self-test against the action-realization probe adapter. Each test exercises the FULL MCP path (list_tools + call_tool), not the underlying primitives alone — catches schema mismatches, dispatch wiring bugs, JSON serialization issues.
+
+**Wiring fix:** removed the top-level `assert _ccr is not None` from `_dispatch`. _ccr is only needed by agent_spawn / agent_parallel / mh_* tools; the v0.9.1 surfaces don't touch it. Per-branch assertions now live with the tools that actually need _ccr.
+
+Full suite: 613 passing + 1 expected skip (verify-with-populated-arms needs organic incident data; skips when local DB has none).
+
 ## [0.9.0] - 2026-05-24
 
 ### Reliability, queryability, and a falsifiable-eval primitive
