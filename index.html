@@ -367,8 +367,8 @@ footer .links{display:flex;gap:2rem;justify-content:center;margin-bottom:1rem}
       <span class="cmd">git clone https://github.com/canivel/kaos.git && cd kaos && uv sync</span>
     </div>
     <div class="badges">
-      <span class="badge" style="color:var(--accent2);border-color:rgba(162,155,254,.3)">v0.8.3</span>
-      <span class="badge" style="color:#fd79a8;border-color:rgba(253,121,168,.35);background:rgba(253,121,168,.08)">neuroplasticity</span>
+      <span class="badge" style="color:var(--accent2);border-color:rgba(162,155,254,.3)">v0.9.1</span>
+      <span class="badge" style="color:#fd79a8;border-color:rgba(253,121,168,.35);background:rgba(253,121,168,.08)">falsifiable eval</span>
       <span class="badge green" style="color:var(--green);border-color:rgba(0,230,118,.25)">8 research integrations</span>
       <span class="badge blue" style="color:var(--cyan);border-color:rgba(24,255,255,.25)">self-organizing</span>
       <span class="badge">safe by design</span>
@@ -1459,9 +1459,41 @@ kaos log decide refactor-agent --intent 2
 
     <div class="release">
       <div class="release-header">
+        <span class="release-version">v0.9.1</span>
+        <span class="release-date">May 26, 2026</span>
+        <span class="release-tag">latest</span>
+      </div>
+      <p class="release-category">MCP exposure of v0.9 surfaces &mdash; 50 &rarr; 58 tools &mdash; <a href="https://github.com/canivel/kaos/blob/main/CHANGELOG.md" style="color:var(--accent2);font-size:.75rem;text-transform:none;letter-spacing:0">changelog</a></p>
+      <ul>
+        <li><strong>8 new MCP tools</strong> wrap every v0.9 CLI surface: <code>doctor_proposer</code> (parallel provider smoke), <code>eval_probe_{falsify,run,verify}</code> (gate-first falsification + binding-verdict runs + on-disk verify), <code>experiment_{log,list,show,compare}</code> (append-only journal of probe / mh_search / benchmark runs).</li>
+        <li><strong>Why a patch release, not v0.9.0:</strong> v0.9.0 deliberately held the MCP surface flat while the CLI groups stabilized. Two days of real use confirmed the read-side of the experiment journal is a legitimate mid-conversation need ("what mechanisms have we evaluated?"), and the eval-probe + doctor surfaces compose cleanly into agent-driven research workflows. v0.9.1 wraps the whole thing.</li>
+        <li><strong>Error containment</strong>: each new tool returns <code>Error: &lt;type&gt;: &lt;msg&gt;</code> JSON strings rather than crashing the dispatcher &mdash; the same rule the existing 50 tools follow.</li>
+        <li><strong>Wiring fix</strong>: removed the blanket <code>assert _ccr is not None</code> from <code>_dispatch</code>. _ccr is only required by tools that orchestrate agents (agent_spawn / agent_parallel / mh_*); the per-branch assertion now lives with those tools.</li>
+        <li><strong>20 new MCP tests</strong> in <code>tests/test_mcp_v091.py</code> exercise the FULL dispatch path (list_tools + call_tool, JSON serialization, error containment) against the action-realization probe adapter and a real <code>ExperimentStore</code>. Catches schema mismatches and wiring bugs that unit-testing the primitives alone misses. <strong>613 tests passing</strong> + 1 expected skip.</li>
+      </ul>
+    </div>
+
+    <div class="release">
+      <div class="release-header">
+        <span class="release-version">v0.9.0</span>
+        <span class="release-date">May 24, 2026</span>
+      </div>
+      <p class="release-category">Reliability, queryability, and a falsifiable-eval primitive &mdash; <a href="https://github.com/canivel/kaos/blob/main/docs/roadmap/v0.9.md" style="color:var(--accent2);font-size:.75rem;text-transform:none;letter-spacing:0">v0.9 spec</a> &middot; <a href="blog/kaos-v0.9.0.html" style="color:var(--accent2);font-size:.75rem;text-transform:none;letter-spacing:0">blog post</a></p>
+      <ul>
+        <li><strong>Six candidates evaluated, zero mechanisms shipped &mdash; the discipline IS the deliverable.</strong> SAGE, synthesis-as-consolidation (LLM + extractive), AutoResearchClaw, HASP, and the Life-Harness action-realization slice all evaluated against the v0.8.3 native baseline. Outcomes: REJECT, REJECT, DO NOT BUILD (structural impossibility), mostly orthogonal, REVIEWED-REJECTED, and VOID#1. Each verdict is on disk, alongside the audit trail.</li>
+        <li><strong>PR-1 (closes #11)</strong>: <code>claude_code</code> provider switched from blocking <code>subprocess.run(timeout=300)</code> to <code>asyncio.create_subprocess_exec</code> with incremental streaming + idle/wall timeouts. New <code>ProposerStalled</code> exception (recoverable) distinct from <code>TimeoutError</code> (hard). Meta-harness search loop catches both and continues to next iteration instead of dying. New CLI: <code>kaos doctor proposer</code> for cheap regression detection.</li>
+        <li><strong>PR-2 (kaos.eval.harness)</strong>: 6-file module codifying the falsifiable-eval apparatus that produced 4 of 5 REJECTs this cycle. <code>ArmResults</code>, <code>GateOutcome</code>, seeded <code>bootstrap_diff_ci</code>, hash-locked <code>load_lock</code> with <code>LockTamperError</code>, blind <code>judge_arm</code> via <code>SurrogateVerifier</code> on anonymised stream, uniform <code>compute_verdict</code> (ACCEPT/REJECT/VOID) no probe can override, and a <code>Probe</code> ABC. New CLI: <code>kaos eval probe {run,verify,falsify}</code>.</li>
+        <li><strong>PR-3 (closes #8)</strong>: schema v8 &rarr; v9 with one additive <code>experiments</code> table (append-only, indexed on name/family/verdict/git_sha). <code>ExperimentStore</code> + <code>kaos experiment {log,list,show,compare}</code> CLI. <code>git_sha</code> auto-fills from <code>git rev-parse HEAD</code>. Closes the "what changed since the last run?" gap without metric duplication.</li>
+        <li><strong>PR-4 (action-realization probe, PROBE ONLY)</strong>: Life-Harness narrow slice. Lock pre-registered at sha256 <code>3ca89983...</code> BEFORE any probe code existed (gate-first invariant). Kill gates G1&ndash;G4 byte-frozen: +4.0pp over v0.8.3 native on action-class slice with bootstrap95 lo &gt; 0, +3.0pp/+2.0pp over lesions, no &gt;-1.0pp regression on control, p95 inline &lt;500&micro;s. Falsification self-test ADMISSIBLE. <strong>Binding verdict: VOID#1 (insufficient organic sample)</strong> &mdash; n_action=2 in dev DB &lt; 200, lock forbids synthetic substitution. Mechanism stays parked. v0.10 NOT pre-committed.</li>
+        <li><strong>Schema v9</strong>: one additive migration; v8 &rarr; v9 upgrade tested with row preservation. <strong>50 MCP tools</strong> (held flat in v0.9.0; expanded to 58 in v0.9.1).</li>
+        <li><strong>586 unit tests passing</strong> at v0.9.0 release (+36 over v0.8.3): proposer streaming + idle/wall timeouts (7), eval-harness primitives (20), experiments journal (9). No banned-package use (no <code>litellm</code>, no <code>openai</code> SDK; raw httpx + <code>claude_code</code> + <code>agent_sdk</code> only).</li>
+      </ul>
+    </div>
+
+    <div class="release">
+      <div class="release-header">
         <span class="release-version">v0.8.3</span>
         <span class="release-date">May 13, 2026</span>
-        <span class="release-tag">latest</span>
       </div>
       <p class="release-category">Finer-grained outcomes, failures, objectives &mdash; and a war-room UI &mdash; <a href="https://github.com/canivel/kaos/blob/main/docs/roadmap/v0.8.3.md" style="color:var(--accent2);font-size:.75rem;text-transform:none;letter-spacing:0">full plan</a></p>
       <div style="margin:1.2rem 0;border-radius:12px;overflow:hidden;border:1px solid rgba(162,155,254,.18);box-shadow:0 8px 30px rgba(0,0,0,.4)">

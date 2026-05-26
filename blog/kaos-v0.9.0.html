@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Six candidates evaluated. Zero shipped. KAOS v0.9 makes the discipline the deliverable.</title>
+<meta name="description" content="KAOS v0.9 fixes a P0 in the meta-harness proposer path, makes experiments queryable, and turns the apparatus that rejected 4 of 5 mechanism candidates this cycle into a first-class `kaos eval` primitive. One pre-registered probe shipped with it; its verdict is reported honestly.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>%F0%9F%8E%AF</text></svg>">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;
+  --fg:#e4e4ef;--fg2:#9494a8;
+  --accent:#6c5ce7;--accent2:#a29bfe;
+  --green:#00e676;--orange:#ff9100;--red:#ff5252;--cyan:#18ffff;
+  --mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --max:740px;
+}
+html{scroll-behavior:smooth;font-size:16px}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.7;overflow-x:hidden}
+a{color:var(--accent2);text-decoration:none;transition:color .2s}
+a:hover{color:var(--cyan);text-decoration:underline}
+code,pre{font-family:var(--mono)}
+::selection{background:var(--accent);color:#fff}
+
+nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,15,.9);backdrop-filter:blur(12px);border-bottom:1px solid rgba(108,92,231,.15)}
+nav .wrap{display:flex;align-items:center;justify-content:space-between;height:60px;max-width:1100px;margin:0 auto;padding:0 2rem}
+nav .logo{font-family:var(--mono);font-weight:700;font-size:1.1rem;color:var(--fg);letter-spacing:2px;text-decoration:none}
+nav .logo span{color:var(--accent2)}
+nav .back{font-size:.85rem;color:var(--fg2);display:flex;align-items:center;gap:.4rem}
+nav .back:hover{color:var(--fg);text-decoration:none}
+
+.article-wrap{max-width:var(--max);margin:0 auto;padding:0 2rem}
+
+.post-header{padding:8rem 0 3rem;border-bottom:1px solid rgba(255,255,255,.06)}
+.post-tag{font-family:var(--mono);font-size:.72rem;color:var(--accent2);letter-spacing:3px;text-transform:uppercase;margin-bottom:1rem;display:block}
+.post-header h1{font-size:clamp(1.9rem,4vw,2.8rem);font-weight:800;letter-spacing:-.5px;line-height:1.2;margin-bottom:1rem}
+.post-header h1 em{font-style:normal;background:linear-gradient(135deg,var(--accent2),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.post-meta{display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap;margin-top:1.5rem}
+.post-meta-item{font-size:.82rem;color:var(--fg2);display:flex;align-items:center;gap:.35rem}
+.post-meta-item .dot{width:4px;height:4px;border-radius:50%;background:var(--fg2);display:inline-block}
+.post-subtitle{font-size:1.1rem;color:var(--fg2);line-height:1.7;margin-top:1rem}
+
+.post-body{padding:3rem 0 5rem}
+.post-body h2{font-size:1.55rem;font-weight:700;margin:3rem 0 .9rem;letter-spacing:-.3px;color:var(--fg)}
+.post-body h3{font-size:1.15rem;font-weight:700;margin:2.2rem 0 .6rem;color:var(--accent2)}
+.post-body p{margin-bottom:1.3rem;color:var(--fg2);font-size:1.02rem;line-height:1.78}
+.post-body p strong{color:var(--fg)}
+.post-body ul,.post-body ol{margin:0 0 1.3rem 1.5rem;color:var(--fg2);font-size:1.02rem}
+.post-body li{margin-bottom:.4rem;line-height:1.7}
+.post-body li strong{color:var(--fg)}
+.post-body a{color:var(--accent2)}
+.post-body a:hover{color:var(--cyan)}
+.post-body hr{border:none;border-top:1px solid rgba(255,255,255,.08);margin:2.5rem 0}
+
+.post-body pre{background:var(--bg2);border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:1.2rem 1.5rem;overflow-x:auto;font-size:.85rem;line-height:1.65;color:var(--fg2);margin-bottom:1.5rem}
+.post-body pre code{color:var(--fg2)}
+.post-body :not(pre) > code{background:var(--bg3);color:var(--accent2);padding:.15rem .45rem;border-radius:4px;font-size:.85em}
+
+.callout{background:var(--bg2);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:1rem 1.4rem;margin:1.5rem 0;font-size:.95rem;color:var(--fg2)}
+.callout strong{color:var(--fg)}
+
+.pivot-block{background:rgba(108,92,231,.08);border:1px solid rgba(108,92,231,.25);border-radius:10px;padding:1.2rem 1.5rem;font-family:var(--mono);font-size:.82rem;line-height:1.65;color:var(--fg2);margin-bottom:1.5rem;overflow-x:auto}
+
+.result-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:.85rem;margin:1.5rem 0}
+.result-table th{text-align:left;padding:.6rem .8rem;border-bottom:2px solid var(--accent);color:var(--fg);font-size:.78rem;text-transform:uppercase;letter-spacing:.5px}
+.result-table td{padding:.5rem .8rem;border-bottom:1px solid rgba(255,255,255,.05);color:var(--fg2)}
+.result-table tr:hover td{background:rgba(108,92,231,.05)}
+.result-table .good{color:var(--green)}
+.result-table .bad{color:var(--red)}
+.result-table .warn{color:var(--orange)}
+
+.paper-pills{display:flex;flex-wrap:wrap;gap:.5rem;margin:1rem 0 1.5rem}
+.paper-pill{font-family:var(--mono);font-size:.72rem;padding:.3rem .7rem;border-radius:20px;background:var(--bg3);border:1px solid rgba(255,255,255,.07);color:var(--fg2);text-decoration:none;transition:border-color .2s}
+.paper-pill:hover{border-color:var(--accent2);color:var(--accent2);text-decoration:none}
+
+footer{padding:3rem 0;text-align:center;color:var(--fg2);font-size:.85rem;border-top:1px solid rgba(255,255,255,.06)}
+footer a{color:var(--fg2)}
+footer a:hover{color:var(--accent2)}
+footer .links{display:flex;gap:1.5rem;justify-content:center;margin-bottom:.8rem;flex-wrap:wrap}
+
+@media(max-width:768px){.post-header h1{font-size:1.8rem}}
+</style>
+</head>
+<body>
+
+<nav>
+<div class="wrap">
+  <a href="../index.html" class="logo"><span>K</span>AOS</a>
+  <a href="../index.html" class="back">&larr; Back to kaos</a>
+</div>
+</nav>
+
+<div class="article-wrap">
+
+<header class="post-header">
+  <span class="post-tag">Blog &mdash; May 25, 2026 &middot; updated May 26 for v0.9.1</span>
+  <h1>Six candidates evaluated. Zero shipped.<br>KAOS v0.9 makes the <em>discipline</em> the deliverable.</h1>
+  <p class="post-subtitle">v0.9 fixes a P0 in the meta-harness proposer path, makes experiments queryable, and turns the apparatus that rejected 4 of 5 mechanism candidates this cycle into a first-class <code>kaos eval</code> primitive. The probe that shipped with it landed VOID. That is the success criterion. v0.9.1 (two days later) wraps the whole thing in MCP so agents can drive it.</p>
+  <div class="post-meta">
+    <span class="post-meta-item">Danilo Canivel</span>
+    <span class="post-meta-item"><span class="dot"></span>KAOS v0.9.1</span>
+    <span class="post-meta-item"><span class="dot"></span>10 min read</span>
+    <span class="post-meta-item"><span class="dot"></span><a href="https://github.com/canivel/kaos">github.com/canivel/kaos</a></span>
+  </div>
+</header>
+
+<article class="post-body">
+
+<p>most frameworks release notes follow a pattern. new mechanism, demo numbers, ship. ship again next quarter. the field assumes that visible velocity means the framework is improving. <strong>v0.9 ships no new mechanism.</strong> not because the cupboard is bare &mdash; five candidates were evaluated this cycle &mdash; but because none of them earned it.</p>
+
+<p>that sentence sounds defensive. it is not. it took roughly a month of work to confidently say it, and that month of work is what v0.9 actually ships: a primitive that makes "did the candidate earn it" a question with a binding, hash-locked, retune-proof answer.</p>
+
+<hr>
+
+<h2>The problem this release solves</h2>
+
+<p>through the v0.8 series KAOS absorbed several research-paper-backed mechanisms in quick succession: neuroplasticity from biological consolidation models, the EvoSkills surrogate-verifier loop, MemPalace's AAAK compaction, CORAL co-evolution, a critical-step localizer, the failure-taxonomy and ISA/ISC layers. each one came with a measured win on a benchmark, but the benchmarks were authored alongside the mechanism. that is fine when the framework is small. it stops being fine when you are deciding which of five competing ideas to integrate next.</p>
+
+<p>the question is no longer "does this mechanism work in isolation" but "does this mechanism still help on top of everything KAOS already has". the v0.8.3 native baseline is <em>strong</em> &mdash; localizer + diagnoser + retry-with-feedback already absorbs a lot of what new mechanisms claim. and there is a published prior worth taking seriously: <a href="https://arxiv.org/abs/2603.15401">SWE-Skills-Bench</a> reports that 39 of 49 deployed agent skills produced zero gain on their target workloads and 3 actively degraded performance. shipping a mechanism without a test that can <em>kill</em> it is shipping a regression with extra steps.</p>
+
+<p>so for v0.9 we sat down and built the kill switch.</p>
+
+<hr>
+
+<h2>The kill switch, in one paragraph</h2>
+
+<p><code>kaos.eval.harness</code> is a small module &mdash; six files, under 500 lines. it gives you a <code>Probe</code> base class with a fixed lifecycle: write the kill gates into a JSON manifest, take its sha256, add that hash to a pre-registered allow-list in code, build the arms (B0 baseline, FULL feature, L1/L2 lesions), let the harness execute them, send the per-query outcomes through a blind judge on an anonymised stream, and emit a verdict by uniform rule: <strong>ACCEPT</strong> iff every kill-gate passes, <strong>REJECT</strong> if any kill-gate fails, <strong>VOID</strong> if the sanity floor fails or the judge audit is below threshold. editing the manifest after results land changes its sha256 and the harness refuses to run. there is no retune-and-rerun affordance &mdash; that is the entire point.</p>
+
+<div class="paper-pills">
+  <a href="https://github.com/canivel/kaos/tree/main/kaos/eval/harness">kaos/eval/harness/</a>
+  <a href="https://github.com/canivel/kaos/blob/main/examples/falsifiable_probe.py">examples/falsifiable_probe.py</a>
+  <a href="https://github.com/canivel/kaos/tree/main/demo_synthesis_consolidation_bench">demo_synthesis_consolidation_bench/</a>
+  <a href="https://github.com/canivel/kaos/tree/main/demo_action_realization_bench">demo_action_realization_bench/</a>
+</div>
+
+<p>the CLI surface is three commands:</p>
+
+<pre><code>kaos eval probe run     --probe pkg.module:ClassName --out-dir DIR
+kaos eval probe verify  --probe pkg.module:ClassName --results PATH
+kaos eval probe falsify --probe pkg.module:ClassName</code></pre>
+
+<p><code>falsify</code> is the one that matters most. it substitutes the FULL arm with B0 (or whichever baseline you choose) and asserts the harness emits <code>[KILL: G1]</code>. a harness in which the feature <em>cannot</em> lose is inadmissible, and any later "pass" from it is meaningless. you run <code>falsify</code> before you trust any <code>run</code>. the synthesis-consolidation bench from v0.8.x already used this pattern by hand; v0.9 makes it a single command.</p>
+
+<hr>
+
+<h2>What the discipline did this cycle</h2>
+
+<p>the v0.9 research arc evaluated six mechanism candidates against KAOS's v0.8.3 native baseline. the table below is the actual ledger.</p>
+
+<table class="result-table">
+  <thead>
+    <tr><th>Candidate</th><th>Origin</th><th>Verdict</th><th>Why</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>SAGE</td>
+      <td><a href="https://arxiv.org/abs/2605.12061">arXiv:2605.12061</a></td>
+      <td class="bad">REJECTED (2/10)</td>
+      <td>requires GPU + GRPO training + trained graph reader; every requirement violates a KAOS hard constraint</td>
+    </tr>
+    <tr>
+      <td>synthesis-as-consolidation (LLM)</td>
+      <td><a href="https://arxiv.org/abs/2604.27707">arXiv:2604.27707</a> position paper</td>
+      <td class="bad">REJECT via probe</td>
+      <td>FULL = 0.000 on hard queries; LLM bridges paraphrased technical tokens away &mdash; unmatchable under exact-substring FTS</td>
+    </tr>
+    <tr>
+      <td>synthesis-as-consolidation (extractive)</td>
+      <td>cheap probe after the LLM REJECT</td>
+      <td class="bad">DO NOT BUILD</td>
+      <td>preserves tokens, lacks query-side bridging vocabulary &mdash; <strong>structural impossibility under KAOS constraints</strong></td>
+    </tr>
+    <tr>
+      <td>AutoResearchClaw</td>
+      <td><a href="https://arxiv.org/abs/2605.20025">arXiv:2605.20025</a></td>
+      <td class="warn">Mostly orthogonal (3/10)</td>
+      <td>strong vertical research-automation app, not a horizontal framework mechanism; one parked idea (verifiable numeric reporting)</td>
+    </tr>
+    <tr>
+      <td>HASP</td>
+      <td><a href="https://arxiv.org/abs/2605.17734">arXiv:2605.17734</a></td>
+      <td class="bad">REVIEWED-REJECTED (0.78 conf)</td>
+      <td>v0.8.3 localizer + diagnoser already absorbs the claimed gain; LoRA path violates hard constraint; SWE-Skills-Bench negative prior</td>
+    </tr>
+    <tr>
+      <td>Action Realization (Life-Harness slice)</td>
+      <td><a href="https://arxiv.org/abs/2605.22166">arXiv:2605.22166</a></td>
+      <td class="warn">VOID#1 (un-evaluated)</td>
+      <td>pre-registered probe ran; n_action = 2 in the dev DB &lt; 200 required; lock forbids synthetic substitution</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>two REJECTs and a DO-NOT-BUILD are arguments from evidence. a VOID is an argument from honesty about evidence absence. the framework would have been worse if any of these had shipped under the older "looks good in the benchmark we wrote alongside it" bar.</p>
+
+<hr>
+
+<h2>The "FTS-without-embeddings vise" &mdash; a result, not a complaint</h2>
+
+<p>the synthesis-as-consolidation arc is the most useful one to walk through, because it converted what felt like an open question into a structural impossibility result. the original idea was simple: every dream cycle, cluster the Hebbian-linked memory entries, write one synthesized insight per cluster, retrieve the insight when a query semantically matches the cluster. lots of papers prescribe a version of this; the KAOS-native adaptation looked obvious.</p>
+
+<p>the LLM variant failed the gates because the synthesizer wrote bridging prose but paraphrased the technical rule tokens. so an "insight" might say <em>"the function exits early when the input is invalid"</em> instead of preserving the exact tokens <code>raise ValueError</code> that the query was going to look for. KAOS uses FTS without embeddings (hard-constraint), so an exact-substring miss is a permanent miss.</p>
+
+<p>the extractive variant preserved every technical token verbatim, by construction. it failed the gates for the opposite reason: the spine contained <code>raise ValueError</code> but no semantic bridge to the query <em>"what happens when input is bad"</em>. without embeddings the query never reaches the spine in the first place.</p>
+
+<div class="callout">
+<strong>The vise:</strong> a retrieved abstraction must be <em>both</em> token-faithful (so exact-match FTS can find it from the right query) <em>and</em> query-bridge-able (so a semantically distant query can find it at all). satisfying both at once requires embeddings or weight updates. KAOS forbids both. therefore retrieval-side synthesis-as-consolidation cannot deliver compositional or abstraction recall in KAOS &mdash; not as a tuning problem, as a structural one.
+</div>
+
+<p>that is more valuable than another mechanism. it closes a class of proposal cleanly, which means we stop spending cycles on variants of it.</p>
+
+<hr>
+
+<h2>The other three PRs</h2>
+
+<p>three pieces of release-shaped work landed alongside the eval primitive.</p>
+
+<h3>PR-1 &mdash; proposer streaming closes a real P0</h3>
+
+<p>the <code>claude_code</code> provider had been making a blocking <code>subprocess.run(timeout=300)</code> call. in practice this meant: every meta-harness iteration burned the full timeout when the CLI took its time, and the search loop died on the timeout rather than continuing. that broke the meta-harness as a useful tool against the CLI proposer. v0.9 switches to <code>asyncio.create_subprocess_exec</code> with incremental <code>proc.stdout.read(8192)</code> gated by <code>asyncio.wait_for(read_to)</code> where <code>read_to = min(idle_timeout, remaining_wall)</code>. an idle stall raises <code>ProposerStalled</code> (recoverable, the loop continues to the next iteration); the absolute wall raises <code>TimeoutError</code> (hard). new CLI for cheap regression catching:</p>
+
+<pre><code>$ kaos doctor proposer
+Proposer smoke -- 1 provider(s) (wall=30.0s, idle=10.0s)
+  ok            claude-sonnet            29583.7 ms   OK</code></pre>
+
+<h3>PR-2 &mdash; the eval harness itself</h3>
+
+<p>covered above. one design call worth flagging: the module exports a <code>Probe</code> ABC, but the synthesis-consolidation bench from earlier in the cycle was not retrofitted to use it. <code>demo_synthesis_consolidation_bench/</code> stays as it was &mdash; it is the audit trail for that REJECT and rewriting it would invalidate the trail. the apparatus that proves the harness is reusable is the <em>new</em> probe in PR-4. that is the right test of an abstraction: it survives second use, not the use it was authored against.</p>
+
+<h3>PR-3 &mdash; experiments journal closes the queryability gap</h3>
+
+<p>when a verdict lands, nothing in KAOS used to record it durably alongside the git sha, the lock hash, and the per-arm stats. the next person had to grep commits. v0.9 adds one additive table (<code>experiments</code>, schema v8 &rarr; v9, no destructive changes) and four CLI commands:</p>
+
+<pre><code>kaos experiment log     --name --family --verdict --lock-sha256 \
+                        --arms-json --gates-json --results-path
+kaos experiment list    [--name] [--family] [--verdict-prefix] [--limit]
+kaos experiment show    EXP_ID
+kaos experiment compare A_ID B_ID</code></pre>
+
+<p>compare returns a changed-fields map so "what's new since the last run" becomes a one-line question. git_sha auto-fills from <code>git rev-parse HEAD</code> at log time.</p>
+
+<h3>PR-4 &mdash; the probe that earned its VOID</h3>
+
+<p>the strongest of the rejected candidates was Life-Harness's pre-execution Action Realization Layer &mdash; deterministic validation and canonicalization of malformed tool calls <em>before</em> the tool boundary. the one place KAOS v0.8.3 cannot trivially absorb is timing: the localizer fires <em>after</em> failure; Action Realization would fire <em>before</em>. that is a real net-new slice and the only one worth a probe.</p>
+
+<p>the gates were locked at sha256 <code>3ca89983...</code> in <a href="https://github.com/canivel/kaos/commit/fb6d579">commit fb6d579</a>, <em>before</em> any probe code existed. they require <strong>+4.0pp</strong> over the v0.8.3 native baseline on the action-class slice with bootstrap95 lower bound above zero, <strong>+3.0pp over the never-fire lesion</strong> and <strong>+2.0pp over the random-fire lesion</strong> for causal isolation, <strong>no more than &minus;1.0pp regression</strong> on the non-action control slice, and <strong>p95 inline overhead under 500&nbsp;&micro;s</strong>. workload is <em>organic only</em> &mdash; the lock file explicitly forbids synthetic substitution.</p>
+
+<p>the falsification self-test passed (<code>FULL := B1</code> emits <code>[KILL: G1]</code>; the harness can in fact kill the feature). the binding run on the local KAOS database returned:</p>
+
+<pre><code>[lock] ISA.lock.json sha256=3ca89983...
+[workload] action=2  control=0  sanity=500
+[VERDICT] VOID#1: insufficient organic action-class sample:
+          n_action=2 &lt; 200. Lock forbids synthetic substitution;
+          collect more organic data.</code></pre>
+
+<p>that is the actual on-disk verdict. it is recorded in <code>demo_action_realization_bench/VERDICT.md</code> alongside the audit trail. the mechanism is not REJECTED &mdash; it is <em>un-evaluated under the binding probe</em>. it stays parked. when a live KAOS deployment accumulates 200 organic action-class incidents, the same probe can be re-run against the same lock hash and produce a binding feature verdict. v0.10 is not pre-committed to the mechanism.</p>
+
+<div class="callout">
+this matters because it would have been easy to add a fallback workload generator and ship an ACCEPT. the lock prevents that. specifically: the <code>synthetic_fallback: NONE</code> clause was hashed into the manifest before any code, and editing it now would change the sha256, which would make the harness refuse to load it.
+</div>
+
+<hr>
+
+<h2>What it looks like in code</h2>
+
+<p>the canonical example is <a href="https://github.com/canivel/kaos/blob/main/examples/falsifiable_probe.py"><code>examples/falsifiable_probe.py</code></a>. it builds a tiny "does adding 4 few-shot examples help classification accuracy" probe end-to-end &mdash; pre-registered manifest, hash-lock, falsification self-test, binding run, journal log:</p>
+
+<pre><code>from kaos.eval.harness import Probe, ArmResults, GateOutcome, \
+    bootstrap_diff_ci, compute_verdict
+from kaos.experiments import ExperimentStore
+
+class FewshotProbe(Probe):
+    lock_path = "ISA.lock.json"
+    known_sha256 = {"5aa9c10d...": "v1-demo"}
+
+    def arms(self):
+        return ["B0", "L1", "FULL"]
+
+    def gates(self, arms):
+        a_full = arms["FULL"].labels({"hard"})
+        a_b0   = arms["B0"].labels({"hard"})
+        md, lo, hi = bootstrap_diff_ci(a_full, a_b0, iters=500)
+        g1 = md &gt;= 0.10 and lo &gt; 0.0
+        diff_l1 = arms["FULL"].acc({"hard"}) - arms["L1"].acc({"hard"})
+        g2 = diff_l1 &gt;= 0.05
+        return [
+            GateOutcome("G1", "beats baseline", g1, kill=True,
+                        detail=f"FULL-B0={md:+.3f}, lo={lo:+.3f}"),
+            GateOutcome("G2", "causal isolation", g2, kill=True,
+                        detail=f"FULL-L1={diff_l1:+.3f}"),
+        ]
+
+    def run(self, *, out_dir, **kw):
+        arms = self._build_arms()
+        outs = self.gates(arms)
+        return {"verdict": compute_verdict(outs, judge_kappa=1.0),
+                "judge_kappa": 1.0, "arms": {...}, "gates": [...]}
+
+probe = FewshotProbe()
+_, falsify_verdict = probe.falsify()    # must REJECT, else inadmissible
+result = probe.run(out_dir="./out")     # ACCEPT / REJECT / VOID
+
+with ExperimentStore("kaos.db") as store:
+    store.log_run(name="fewshot-helps", verdict=result["verdict"],
+                  lock_sha256=lock_sha, arms=result["arms"],
+                  gates=result["gates"])
+</code></pre>
+
+<p>the deliberate shape of the API is that the rule for ACCEPT/REJECT/VOID lives in <code>compute_verdict</code>, which the probe author cannot override. that is the one bit of opinionation in the module &mdash; no probe gets to invent a softer verdict rule mid-run.</p>
+
+<hr>
+
+<h2>What v0.9 is not</h2>
+
+<p>it is worth being precise about what this release does not claim. it does not claim that KAOS is now provably bug-free. it does not claim that the discipline catches all bad mechanisms &mdash; it catches the ones whose effects are too small or too narrow to clear the bar, which is most of them but not all. it does not claim that REJECT/VOID was a foregone conclusion for any of the six candidates &mdash; the gates were authored before the results were known and each one could have ACCEPTed.</p>
+
+<p>what it does claim is narrower: <strong>every claim a future KAOS release makes about a new mechanism can now be backed by a probe that the author of the mechanism could not have rigged.</strong> that is a quiet thing to ship, and it is the only thing v0.9 ships on purpose.</p>
+
+<hr>
+
+<h2>Try it</h2>
+
+<pre><code>uv sync
+uv run python examples/falsifiable_probe.py
+
+uv run kaos doctor proposer
+uv run kaos eval probe falsify \
+    --probe demo_action_realization_bench.probe_adapter:ActionRealizationProbe
+uv run kaos experiment list --db kaos.db</code></pre>
+
+<p>the CHANGELOG entry for v0.9.0 is <a href="https://github.com/canivel/kaos/blob/main/CHANGELOG.md">here</a>. the roadmap doc that frozen-pinned all four PRs and the explicit "no" list before any of them landed is <a href="https://github.com/canivel/kaos/blob/main/docs/roadmap/v0.9.md">here</a> &mdash; useful to read as a record of how the discipline was applied to its own scope.</p>
+
+<p>v0.10 is unscoped. it will not be scoped until at least one mechanism candidate produces an ACCEPT under this primitive.</p>
+
+<hr>
+
+<h2>v0.9.1 epilogue &mdash; MCP exposure</h2>
+
+<p>v0.9.0 deliberately did not expose the new CLI groups through MCP. that call held for about two days. it took roughly one real conversation with an agent &mdash; "what mechanisms have we already evaluated against the v0.8.3 baseline?" &mdash; to realize the read-side of the experiment journal was a legitimate mid-conversation need, not a release-cut affordance. shelling out via <code>Bash</code> works but is a paper cut every time.</p>
+
+<p>v0.9.1 wraps all eight v0.9 surfaces as MCP tools. surface goes from 50 to 58:</p>
+
+<table class="result-table">
+  <thead>
+    <tr><th>MCP tool</th><th>Source CLI</th><th>Use case</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>doctor_proposer</code></td><td><code>kaos doctor proposer</code></td><td>smoke-check every provider before delegating a long task</td></tr>
+    <tr><td><code>eval_probe_falsify</code></td><td><code>kaos eval probe falsify</code></td><td>prove the harness can kill the feature before trusting any "pass"</td></tr>
+    <tr><td><code>eval_probe_run</code></td><td><code>kaos eval probe run</code></td><td>execute a probe; long-running; binding verdict</td></tr>
+    <tr><td><code>eval_probe_verify</code></td><td><code>kaos eval probe verify</code></td><td>re-check a stored verdict against HEAD's gate code</td></tr>
+    <tr><td><code>experiment_log</code></td><td><code>kaos experiment log</code></td><td>journal one run with auto-filled git_sha</td></tr>
+    <tr><td><code>experiment_list</code></td><td><code>kaos experiment list</code></td><td>"what have we tried?" with verdict-prefix filters</td></tr>
+    <tr><td><code>experiment_show</code></td><td><code>kaos experiment show</code></td><td>dump one row with full arms + gates</td></tr>
+    <tr><td><code>experiment_compare</code></td><td><code>kaos experiment compare</code></td><td>"what changed since the last run?" diff</td></tr>
+  </tbody>
+</table>
+
+<p>each tool returns errors as JSON strings rather than crashing the dispatcher &mdash; the same containment rule the existing 50 tools follow. the rigor isn't only at the gate-design layer; the MCP wrappers carry 20 new tests in <code>tests/test_mcp_v091.py</code> that exercise the FULL dispatch path (list_tools + call_tool, JSON serialization, error containment) against the action-realization probe adapter and a real <code>ExperimentStore</code>. catches schema mismatches and wiring bugs that unit-testing the underlying primitives misses.</p>
+
+<p>one small wiring fix worth flagging: <code>_dispatch</code> had a blanket <code>assert _ccr is not None</code> at the top. the v0.9.1 tools don't need <code>_ccr</code> (only <code>_afs</code>), so the assertion is now per-branch on the tools that actually orchestrate agents. it was always wrong to have it at the top; v0.9.1's tests just made that obvious.</p>
+
+<p>&mdash; danilo</p>
+
+<p style="margin-top:2rem;font-size:.85rem">
+  <strong>Papers cited:</strong>
+  <a href="https://arxiv.org/abs/2603.15401">SWE-Skills-Bench</a> &middot;
+  <a href="https://arxiv.org/abs/2605.12061">SAGE</a> &middot;
+  <a href="https://arxiv.org/abs/2604.27707">Contextual Agentic Memory</a> &middot;
+  <a href="https://arxiv.org/abs/2605.20025">AutoResearchClaw</a> &middot;
+  <a href="https://arxiv.org/abs/2605.17734">HASP</a> &middot;
+  <a href="https://arxiv.org/abs/2605.22166">Life-Harness</a>
+</p>
+
+</article>
+</div>
+
+<footer>
+<div class="wrap" style="max-width:740px;margin:0 auto;padding:0 2rem">
+  <div class="links">
+    <a href="../index.html">Home</a>
+    <a href="https://github.com/canivel/kaos">GitHub</a>
+    <a href="https://github.com/canivel/kaos/blob/main/docs/roadmap/v0.9.md">v0.9 roadmap</a>
+    <a href="https://github.com/canivel/kaos/blob/main/CHANGELOG.md">Changelog</a>
+  </div>
+  <p>KAOS &mdash; Kernel for Agent Orchestration &amp; Sandboxing &mdash; <a href="https://github.com/canivel">Danilo Canivel</a></p>
+</div>
+</footer>
+
+</body>
+</html>
