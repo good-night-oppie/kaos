@@ -95,13 +95,13 @@ footer .links{display:flex;gap:1.5rem;justify-content:center;margin-bottom:.8rem
 <div class="article-wrap">
 
 <header class="post-header">
-  <span class="post-tag">Blog &mdash; May 25, 2026</span>
+  <span class="post-tag">Blog &mdash; May 25, 2026 &middot; updated May 26 for v0.9.1</span>
   <h1>Six candidates evaluated. Zero shipped.<br>KAOS v0.9 makes the <em>discipline</em> the deliverable.</h1>
-  <p class="post-subtitle">v0.9 fixes a P0 in the meta-harness proposer path, makes experiments queryable, and turns the apparatus that rejected 4 of 5 mechanism candidates this cycle into a first-class <code>kaos eval</code> primitive. The probe that shipped with it landed VOID. That is the success criterion.</p>
+  <p class="post-subtitle">v0.9 fixes a P0 in the meta-harness proposer path, makes experiments queryable, and turns the apparatus that rejected 4 of 5 mechanism candidates this cycle into a first-class <code>kaos eval</code> primitive. The probe that shipped with it landed VOID. That is the success criterion. v0.9.1 (two days later) wraps the whole thing in MCP so agents can drive it.</p>
   <div class="post-meta">
     <span class="post-meta-item">Danilo Canivel</span>
-    <span class="post-meta-item"><span class="dot"></span>KAOS v0.9.0</span>
-    <span class="post-meta-item"><span class="dot"></span>8 min read</span>
+    <span class="post-meta-item"><span class="dot"></span>KAOS v0.9.1</span>
+    <span class="post-meta-item"><span class="dot"></span>10 min read</span>
     <span class="post-meta-item"><span class="dot"></span><a href="https://github.com/canivel/kaos">github.com/canivel/kaos</a></span>
   </div>
 </header>
@@ -333,6 +333,34 @@ uv run kaos experiment list --db kaos.db</code></pre>
 <p>the CHANGELOG entry for v0.9.0 is <a href="https://github.com/canivel/kaos/blob/main/CHANGELOG.md">here</a>. the roadmap doc that frozen-pinned all four PRs and the explicit "no" list before any of them landed is <a href="https://github.com/canivel/kaos/blob/main/docs/roadmap/v0.9.md">here</a> &mdash; useful to read as a record of how the discipline was applied to its own scope.</p>
 
 <p>v0.10 is unscoped. it will not be scoped until at least one mechanism candidate produces an ACCEPT under this primitive.</p>
+
+<hr>
+
+<h2>v0.9.1 epilogue &mdash; MCP exposure</h2>
+
+<p>v0.9.0 deliberately did not expose the new CLI groups through MCP. that call held for about two days. it took roughly one real conversation with an agent &mdash; "what mechanisms have we already evaluated against the v0.8.3 baseline?" &mdash; to realize the read-side of the experiment journal was a legitimate mid-conversation need, not a release-cut affordance. shelling out via <code>Bash</code> works but is a paper cut every time.</p>
+
+<p>v0.9.1 wraps all eight v0.9 surfaces as MCP tools. surface goes from 50 to 58:</p>
+
+<table class="result-table">
+  <thead>
+    <tr><th>MCP tool</th><th>Source CLI</th><th>Use case</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>doctor_proposer</code></td><td><code>kaos doctor proposer</code></td><td>smoke-check every provider before delegating a long task</td></tr>
+    <tr><td><code>eval_probe_falsify</code></td><td><code>kaos eval probe falsify</code></td><td>prove the harness can kill the feature before trusting any "pass"</td></tr>
+    <tr><td><code>eval_probe_run</code></td><td><code>kaos eval probe run</code></td><td>execute a probe; long-running; binding verdict</td></tr>
+    <tr><td><code>eval_probe_verify</code></td><td><code>kaos eval probe verify</code></td><td>re-check a stored verdict against HEAD's gate code</td></tr>
+    <tr><td><code>experiment_log</code></td><td><code>kaos experiment log</code></td><td>journal one run with auto-filled git_sha</td></tr>
+    <tr><td><code>experiment_list</code></td><td><code>kaos experiment list</code></td><td>"what have we tried?" with verdict-prefix filters</td></tr>
+    <tr><td><code>experiment_show</code></td><td><code>kaos experiment show</code></td><td>dump one row with full arms + gates</td></tr>
+    <tr><td><code>experiment_compare</code></td><td><code>kaos experiment compare</code></td><td>"what changed since the last run?" diff</td></tr>
+  </tbody>
+</table>
+
+<p>each tool returns errors as JSON strings rather than crashing the dispatcher &mdash; the same containment rule the existing 50 tools follow. the rigor isn't only at the gate-design layer; the MCP wrappers carry 20 new tests in <code>tests/test_mcp_v091.py</code> that exercise the FULL dispatch path (list_tools + call_tool, JSON serialization, error containment) against the action-realization probe adapter and a real <code>ExperimentStore</code>. catches schema mismatches and wiring bugs that unit-testing the underlying primitives misses.</p>
+
+<p>one small wiring fix worth flagging: <code>_dispatch</code> had a blanket <code>assert _ccr is not None</code> at the top. the v0.9.1 tools don't need <code>_ccr</code> (only <code>_afs</code>), so the assertion is now per-branch on the tools that actually orchestrate agents. it was always wrong to have it at the top; v0.9.1's tests just made that obvious.</p>
 
 <p>&mdash; danilo</p>
 
