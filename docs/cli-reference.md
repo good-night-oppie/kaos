@@ -225,7 +225,7 @@ kaos dashboard --db ./project.db
 ## MCP Server
 
 ### `kaos serve`
-Start the MCP server (18 tools) for Claude Code and other MCP-compatible clients.
+Start the MCP server (50 tools — surface held flat in v0.9) for Claude Code and other MCP-compatible clients.
 
 ```bash
 kaos serve --transport stdio       # for Claude Code / most clients
@@ -252,6 +252,99 @@ kaos mh resume <search-id>                       # resume interrupted search
 ```
 
 See [Meta-Harness guide](meta-harness.md) for details.
+
+---
+
+## Doctor (v0.9)
+
+Provider health smoke checks. Catches the P0 #11 failure mode (proposer hang on CLI subprocess) before it blocks a meta-harness search.
+
+### `kaos doctor proposer`
+Sends a tiny "Reply with OK" prompt to every configured provider and reports latency + stream health. Exits non-zero if any provider fails to respond within the bounds.
+
+```bash
+kaos doctor proposer                                    # default bounds
+kaos doctor proposer --wall-timeout 30 --idle-timeout 10
+kaos --json doctor proposer                             # machine-readable
+```
+
+Status values: `ok` / `stalled` (idle stall, recoverable `ProposerStalled`) / `wall-timeout` / `error` / `no-client`.
+
+---
+
+## Eval — falsifiable-eval primitive (v0.9)
+
+Pre-registered, hash-locked, falsifiable probe lifecycle. See `kaos/eval/harness/` and `examples/falsifiable_probe.py`. Probes are referenced as `pkg.module:ClassName`.
+
+### `kaos eval probe falsify`
+Gate-first self-test — substitutes the feature arm by a baseline and proves a kill-gate fires. A harness that cannot lose is **inadmissible** and the command exits non-zero.
+
+```bash
+kaos eval probe falsify \
+    --probe demo_action_realization_bench.probe_adapter:ActionRealizationProbe
+```
+
+### `kaos eval probe run`
+Executes the probe end-to-end and writes `results.json`. Exits non-zero on REJECT/VOID so it composes into CI.
+
+```bash
+kaos eval probe run \
+    --probe demo_action_realization_bench.probe_adapter:ActionRealizationProbe \
+    --out-dir demo_action_realization_bench
+```
+
+### `kaos eval probe verify`
+Re-computes the verdict from a saved `results.json`. Confirms the on-disk verdict matches the gate code at HEAD.
+
+```bash
+kaos eval probe verify \
+    --probe demo_action_realization_bench.probe_adapter:ActionRealizationProbe \
+    --results demo_action_realization_bench/results.json
+```
+
+---
+
+## Experiment — append-only journal (v0.9, closes #8)
+
+Pointer rows over the existing `results.json` / `dream_runs` artifacts. No metric duplication; comparison reads through the pointers. Schema v9 (additive `experiments` table).
+
+### `kaos experiment log`
+Insert one experiment row. Auto-fills `git_sha` from `git rev-parse HEAD` unless `--git-sha ""` suppresses.
+
+```bash
+kaos experiment log \
+    --name action-realization-probe --family probe \
+    --verdict "VOID#1: ..." --judge-kappa 1.0 \
+    --lock-sha256 3ca89983... \
+    --arms-json arms.json --gates-json gates.json \
+    --results-path demo_action_realization_bench/results.json
+```
+
+### `kaos experiment list`
+Newest-first listing, with optional filters.
+
+```bash
+kaos experiment list                              # last 50
+kaos experiment list --name action-realization-probe
+kaos experiment list --family probe --limit 20
+kaos experiment list --verdict-prefix REJECT      # only REJECT runs
+kaos experiment list --verdict-prefix VOID
+```
+
+### `kaos experiment show`
+Dump one experiment row.
+
+```bash
+kaos experiment show 42
+kaos --json experiment show 42
+```
+
+### `kaos experiment compare`
+Diff two experiment rows by field. Useful for "what changed since the last run?".
+
+```bash
+kaos experiment compare 41 42
+```
 
 ---
 

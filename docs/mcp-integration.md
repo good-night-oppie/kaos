@@ -2,7 +2,11 @@
 
 > How to expose KAOS as an MCP server for Claude Code and other MCP-compatible clients.
 
-![MCP Server Integration — 18 tools, Claude Code, agent_spawn and mh_search](../docs/demos/kaos_04_mcp_server.gif)
+![MCP Server Integration — 50 tools, Claude Code, agent_spawn and mh_search](../docs/demos/kaos_04_mcp_server.gif)
+
+> **v0.9.0 notes (MCP surface held flat at 50 tools):**
+> - **No new MCP tools in v0.9** — the release adds three CLI groups (`kaos doctor`, `kaos eval`, `kaos experiment`) but deliberately does NOT expose them through MCP. The eval-harness primitive and experiment journal are meant to be invoked by humans/scripts in a release-cut workflow, not by mid-conversation agents. Use the CLI for them.
+> - **PR-1 fixes proposer hang in the meta-harness path** — `claude_code` provider now uses `asyncio.create_subprocess_exec` with incremental streaming + idle/wall timeouts, and the search loop catches the new `ProposerStalled` exception (recoverable) distinctly from `TimeoutError` (hard). MCP-side `mh_search` / `mh_resume` benefit automatically; no API changes.
 
 > **v0.5.2 notes:**
 > - **CLI-first architecture** — `--json` output on all commands. Agents can shell out to `kaos --json ls` instead of using MCP (10-32x cheaper on tokens).
@@ -28,7 +32,9 @@
 
 KAOS implements the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP), allowing Claude Code and other MCP clients to spawn agents, read/write files, create checkpoints, run SQL queries, and orchestrate parallel agent execution through natural language.
 
-The MCP server is implemented in `kaos/mcp/server.py` using the `mcp` Python package. It wraps the `Kaos` and `ClaudeCodeRunner` instances, exposing 18 tools across 6 categories: Lifecycle, VFS, Checkpoints, Query, Orchestration, and Meta-Harness.
+The MCP server is implemented in `kaos/mcp/server.py` using the `mcp` Python package. It wraps the `Kaos` and `ClaudeCodeRunner` instances, exposing **50 tools** across the following categories: Lifecycle, VFS, State, Checkpoints, Query, Memory, Shared-Log, Skills, Dream, Failure / Critical-Step, Ideal-State, Meta-Harness, and Orchestration.
+
+**Surface evolution:** v0.5 shipped 18 tools (lifecycle + VFS + meta-harness). v0.6–v0.8 grew the surface to 50 as memory, shared-log, skills, neuroplasticity, failure-taxonomy, critical-step localizer, and ISA/ISC layers landed. **v0.9 deliberately holds the surface flat at 50** — its new CLI groups (`kaos doctor`, `kaos eval`, `kaos experiment`) are intentionally not exposed through MCP. They belong in release-cut and CI workflows, not in mid-conversation agent calls.
 
 ---
 
@@ -169,7 +175,7 @@ After adding the configuration and restarting Claude Code, you should see the KA
 
 > "What KAOS tools are available?"
 
-Claude Code should list all 18 KAOS tools.
+Claude Code should list all 50 KAOS tools.
 
 ---
 
