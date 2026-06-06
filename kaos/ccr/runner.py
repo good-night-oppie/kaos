@@ -19,6 +19,7 @@ from typing import Any, TYPE_CHECKING
 
 from kaos.ccr.prompts import build_system_prompt
 from kaos.ccr.tools import ToolRegistry, ToolPermissionPolicy
+from kaos.runtime import bind_agent
 
 if TYPE_CHECKING:
     from kaos.core import Kaos
@@ -114,11 +115,14 @@ class ClaudeCodeRunner:
         self.tools.register(tool)
 
     async def run_agent(self, agent_id: str, task: str) -> str:
-        """
-        Main agent loop — plan, act, observe, repeat.
+        """Main agent loop — plan, act, observe, repeat. Returns final output.
 
-        Returns the agent's final output.
+        Binds ``agent_id`` to the kaos.runtime ContextVar for the call duration.
         """
+        with bind_agent(agent_id):
+            return await self._run_agent_inner(agent_id, task)
+
+    async def _run_agent_inner(self, agent_id: str, task: str) -> str:
         # Validate that at least one provider is configured
         clients = getattr(self.router, "clients", None)
         if clients is not None and not clients:
