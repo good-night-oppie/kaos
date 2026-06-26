@@ -12,12 +12,11 @@ from __future__ import annotations
 import asyncio
 import json
 import subprocess
-import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Awaitable, TYPE_CHECKING
 
-from kaos.runtime import bind_agent, current_agent_id
+from kaos.runtime import bind_agent
 
 if TYPE_CHECKING:
     from kaos.core import Kaos
