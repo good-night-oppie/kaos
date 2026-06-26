@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from kaos.ccr.runner import ClaudeCodeRunner
 from kaos.ccr.tools import ToolDefinition
 from kaos.metaharness.harness import HarnessCandidate
 from kaos.metaharness.prompts import build_proposer_prompt, build_pivot_prompt, build_consolidation_prompt, build_reflect_prompt
+from kaos.metaharness.situation import build_situation_index, render_situation_brief
 
 if TYPE_CHECKING:
     from kaos.core import Kaos
@@ -191,6 +192,11 @@ class ProposerAgent:
             frontier_summary=frontier_summary,
         )
 
+        # Situation brief — surfaces failure regions independent of digest truncation.
+        situation_brief = self._build_situation_brief()
+        if situation_brief:
+            prompt += "\n\n" + situation_brief
+
         if archive_digest:
             # Prepend any reusable skills discovered so far
             skills_text = self._load_skills_text()
@@ -257,7 +263,6 @@ class ProposerAgent:
 
         try:
             # Single LLM call — no CCR loop, no conversation replay
-            model_name = config.get("force_model") or self.router.fallback_model
             response = await self.router.route(
                 agent_id=agent_id,
                 messages=[
@@ -390,6 +395,51 @@ class ProposerAgent:
         except Exception:
             return ""
 
+    # ── Situation brief ──────────────────────────────────────────
+
+    def _build_situation_brief(self) -> str:
+        """Build a failure-region index over /harnesses/*/per_problem.jsonl."""
+        try:
+            harness_dirs = self.afs.ls(self.search_agent_id, "/harnesses")
+        except Exception as e:
+            logger.warning("Failed to list /harnesses for situation brief: %s", e)
+            return ""
+
+        records: list[dict] = []
+        for entry in harness_dirs:
+            if not entry.get("is_dir"):
+                continue
+            hid = entry["name"]
+            evidence_path = f"/harnesses/{hid}/per_problem.jsonl"
+            try:
+                raw = self.afs.read(self.search_agent_id, evidence_path).decode()
+            except FileNotFoundError:
+                continue
+            except Exception:
+                continue
+            per_problem: list[dict] = []
+            for line in raw.strip().split("\n"):
+                if not line.strip():
+                    continue
+                try:
+                    parsed = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(parsed, dict):
+                    per_problem.append(parsed)
+            records.append({
+                "harness_id": hid,
+                "evidence_path": evidence_path,
+                "per_problem": per_problem,
+            })
+
+        try:
+            index = build_situation_index(records)
+            return render_situation_brief(index)
+        except Exception as e:
+            logger.warning("Failed to build situation brief: %s", e)
+            return ""
+
     # ── Archive digest ───────────────────────────────────────────
 
     def _build_archive_digest(self, compaction_level: int) -> str:
@@ -458,7 +508,7 @@ class ProposerAgent:
             # Store metrics for debugging
             self.afs.write(
                 self.search_agent_id,
-                f"/compaction_metrics.json",
+                "/compaction_metrics.json",
                 json.dumps({
                     **metrics.to_dict(),
                     "effective_compaction_level": compaction_level,
