@@ -12,10 +12,11 @@ from __future__ import annotations
 import asyncio
 import json
 import subprocess
-import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Awaitable, TYPE_CHECKING
+
+from kaos.runtime import bind_agent
 
 if TYPE_CHECKING:
     from kaos.core import Kaos
@@ -127,10 +128,10 @@ class ToolRegistry:
     async def execute(
         self, agent_id: str, tool_name: str, arguments: dict[str, Any]
     ) -> Any:
-        """Execute a tool with permission check, sandboxing, and timeout."""
-        # Permission check — denied tools raise PermissionError
-        # The caller (runner.py) catches this and injects an error result
-        # so the LLM knows the tool was blocked and can adapt
+        """Execute a tool with permission check, sandboxing, and timeout.
+
+        Binds agent_id via kaos.runtime so handlers can use current_agent_id().
+        """
         allowed, reason = self.permission_policy.authorize(tool_name)
         if not allowed:
             raise PermissionError(reason)
@@ -139,23 +140,23 @@ class ToolRegistry:
         if not tool:
             raise ValueError(f"Unknown tool: {tool_name}")
 
-        # Inject agent_id for filesystem tools
         if tool_name.startswith("fs_") or tool_name.startswith("state_"):
             arguments["agent_id"] = agent_id
 
-        try:
-            if tool.is_async:
-                result = await asyncio.wait_for(
-                    tool.handler(**arguments),
-                    timeout=tool.timeout_seconds,
+        with bind_agent(agent_id):
+            try:
+                if tool.is_async:
+                    result = await asyncio.wait_for(
+                        tool.handler(**arguments),
+                        timeout=tool.timeout_seconds,
+                    )
+                else:
+                    result = tool.handler(**arguments)
+                return result
+            except asyncio.TimeoutError:
+                raise TimeoutError(
+                    f"Tool {tool_name} timed out after {tool.timeout_seconds}s"
                 )
-            else:
-                result = tool.handler(**arguments)
-            return result
-        except asyncio.TimeoutError:
-            raise TimeoutError(
-                f"Tool {tool_name} timed out after {tool.timeout_seconds}s"
-            )
 
     def _register_builtins(self) -> None:
         """Register built-in filesystem and state tools."""
