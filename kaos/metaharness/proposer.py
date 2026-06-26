@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from kaos.ccr.runner import ClaudeCodeRunner
 from kaos.ccr.tools import ToolDefinition
@@ -263,7 +263,6 @@ class ProposerAgent:
 
         try:
             # Single LLM call — no CCR loop, no conversation replay
-            model_name = config.get("force_model") or self.router.fallback_model
             response = await self.router.route(
                 agent_id=agent_id,
                 messages=[
@@ -509,7 +508,7 @@ class ProposerAgent:
             # Store metrics for debugging
             self.afs.write(
                 self.search_agent_id,
-                f"/compaction_metrics.json",
+                "/compaction_metrics.json",
                 json.dumps({
                     **metrics.to_dict(),
                     "effective_compaction_level": compaction_level,
